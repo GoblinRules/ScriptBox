@@ -11,10 +11,10 @@ Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 
 $script:AppName = 'ScriptBox'
-$script:Version = '1.0.1'
+$script:Version = '1.0.2'
 $script:Repository = 'https://github.com/GoblinRules/ScriptBox'
 $script:SelfSource = 'https://raw.githubusercontent.com/GoblinRules/ScriptBox/main/ScriptBox.ps1'
-$script:IconSource = 'https://raw.githubusercontent.com/GoblinRules/ScriptBox/main/assets/icon.ico'
+$script:IconSource = 'https://raw.githubusercontent.com/GoblinRules/ScriptBox/main/assets/icon.png'
 $script:TempRoot = $null
 $script:ActiveCategory = 'All scripts'
 $script:RunState = $null
@@ -851,10 +851,10 @@ $script:OutputTimer.Add_Tick({
     }
 })
 
-$localIcon = if ($PSScriptRoot -and (Test-Path -LiteralPath (Join-Path $PSScriptRoot 'assets\icon.ico'))) {
-    Join-Path $PSScriptRoot 'assets\icon.ico'
+$localIcon = if ($PSScriptRoot -and (Test-Path -LiteralPath (Join-Path $PSScriptRoot 'assets\icon.png'))) {
+    Join-Path $PSScriptRoot 'assets\icon.png'
 } else {
-    $downloadedIcon = Join-Path $script:TempRoot 'icon.ico'
+    $downloadedIcon = Join-Path $script:TempRoot 'icon.png'
     try {
         Invoke-WebRequest -UseBasicParsing -Uri $script:IconSource -OutFile $downloadedIcon -TimeoutSec 10
         $downloadedIcon
