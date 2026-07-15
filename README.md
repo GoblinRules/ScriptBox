@@ -21,12 +21,13 @@ ScriptBox does not install itself. It keeps its icon and output bridge in a uniq
 - **Power** — restart or shut down Windows with a visible countdown and confirmation.
 - **Windows** — remove common Windows location policy blocks and restore the Geolocation Service.
 - **Tools** — launch JetFuel, InvokeX, or Chris Titus Tech Windows Utility from their current remote source.
+- **Diagnostics** — test either the viewer-side Tailscale path to a KVM or the KVM-site router, NAT, firewall, and UDP conditions.
 
 Use the **i** button to inspect impact, elevation, execution-policy behavior, remote-code status, and the exact script. Use **RUN** to execute it. Scripts that need administrator rights trigger Windows UAC automatically. Only catalog entries marked as requiring a policy bypass receive `-ExecutionPolicy Bypass`, and only for their child PowerShell process.
 
 ## Add or edit a script
 
-All entries live in the clearly marked `SCRIPT CATALOG` array in [`ScriptBox.ps1`](ScriptBox.ps1). Add another `New-CatalogItem` block:
+All entries live in the clearly marked `SCRIPT CATALOG` array in [`ScriptBox.ps1`](ScriptBox.ps1). Longer diagnostics are kept as standalone files in [`scripts`](scripts) so they are easy to review and edit. Add another `New-CatalogItem` block:
 
 ```powershell
 New-CatalogItem `
@@ -39,13 +40,16 @@ New-CatalogItem `
     -NeedsBypass $false `
     -RequiresConfirmation $false `
     -RunsRemoteCode $false `
+    -InputTitle '' `
+    -InputMessage '' `
+    -InputVariable '' `
     -Accent '#22D3EE' `
     -Script {
         Write-Host 'Hello from ScriptBox'
     }
 ```
 
-Categories and counts are generated automatically. Delete an entry to remove it; edit its fields to change the UI or behavior.
+Categories and counts are generated automatically. Set the three input fields when a script needs one text value before launch; ScriptBox shows a matching themed prompt and passes the value only to that run. Delete an entry to remove it; edit its fields to change the UI or behavior.
 
 ## Design and safety notes
 
@@ -54,6 +58,7 @@ Categories and counts are generated automatically. Delete an entry to remove it;
 - Script output is streamed from a temporary UTF-8 log and removed after completion or app shutdown.
 - Restart and shutdown can be cancelled during their countdown with `shutdown /a`.
 - Remote launchers can change independently. Their entries are marked clearly and require confirmation.
+- The KVM diagnostics make no network, firewall, Tailscale, or router changes. By default, each saves a timestamped text report to the current user's Downloads folder.
 - Do not add passwords, tokens, private URLs, or other secrets to this public repository.
 
 ## Validate a change
@@ -68,6 +73,13 @@ $errors = $null
     [ref]$errors
 )
 $errors
+```
+
+Validate both standalone KVM diagnostics without running network tests:
+
+```powershell
+powershell.exe -NoProfile -File .\scripts\KvmClientTailscaleDiagnostics.ps1 -ValidationOnly -NonInteractive
+powershell.exe -NoProfile -File .\scripts\KvmSiteNetworkDiagnostics.ps1 -ValidationOnly -NonInteractive
 ```
 
 Load and validate the UI without showing the window or running a catalog item:

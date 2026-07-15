@@ -11,7 +11,7 @@ Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 
 $script:AppName = 'ScriptBox'
-$script:Version = '1.0.2'
+$script:Version = '1.1.0'
 $script:Repository = 'https://github.com/GoblinRules/ScriptBox'
 $script:SelfSource = 'https://raw.githubusercontent.com/GoblinRules/ScriptBox/main/ScriptBox.ps1'
 $script:IconSource = 'https://raw.githubusercontent.com/GoblinRules/ScriptBox/main/assets/icon.png'
@@ -80,8 +80,15 @@ function New-CatalogItem {
         [bool]$NeedsBypass = $false,
         [bool]$RequiresConfirmation = $false,
         [bool]$RunsRemoteCode = $false,
+        [string]$InputTitle = '',
+        [string]$InputMessage = '',
+        [string]$InputVariable = '',
         [string]$Accent = '#22D3EE'
     )
+
+    if ($InputVariable -and $InputVariable -notmatch '^[A-Za-z_][A-Za-z0-9_]*$') {
+        throw "Catalog input variable '$InputVariable' is not a valid PowerShell variable name."
+    }
 
     [pscustomobject]@{
         Id                   = $Id
@@ -93,6 +100,9 @@ function New-CatalogItem {
         NeedsBypass          = $NeedsBypass
         RequiresConfirmation = $RequiresConfirmation
         RunsRemoteCode       = $RunsRemoteCode
+        InputTitle           = $InputTitle
+        InputMessage         = $InputMessage
+        InputVariable        = $InputVariable
         Accent               = $Accent
         Script               = $Script
     }
@@ -204,6 +214,44 @@ $script:Catalog = @(
         -Script {
             Write-Host 'Downloading Chris Titus Tech Windows Utility...' -ForegroundColor Cyan
             Invoke-RestMethod -UseBasicParsing 'https://christitus.com/win' | Invoke-Expression
+        }
+
+    New-CatalogItem `
+        -Id 'kvm-client-tailscale-diagnostics' `
+        -Name 'KVM Client Tailscale Diagnostics' `
+        -Category 'Diagnostics' `
+        -Description 'Tests the viewer-side Tailscale path, latency, loss, NAT conditions, and JetKVM web reachability.' `
+        -Impact 'Reads local Tailscale status and performs ping, netcheck, and TCP tests. It changes no network settings and saves a text report to Downloads.' `
+        -RequiresConfirmation $true `
+        -RunsRemoteCode $true `
+        -InputTitle 'KVM machine name' `
+        -InputMessage 'Enter the KVM machine name exactly as it appears in Tailscale.' `
+        -InputVariable 'KvmName' `
+        -Accent '#22D3EE' `
+        -Script {
+            Write-Host 'Downloading the ScriptBox KVM client diagnostic...' -ForegroundColor Cyan
+            $source = Invoke-RestMethod -UseBasicParsing 'https://raw.githubusercontent.com/GoblinRules/ScriptBox/main/scripts/KvmClientTailscaleDiagnostics.ps1'
+            $diagnostic = [scriptblock]::Create($source)
+            & $diagnostic -KvmName $KvmName -PingCount 10 -NonInteractive
+        }
+
+    New-CatalogItem `
+        -Id 'kvm-site-network-diagnostics' `
+        -Name 'KVM Site Network Diagnostics' `
+        -Category 'Diagnostics' `
+        -Description 'Checks the KVM-site router path, NAT, firewall, UDP/STUN, port mapping, and Tailscale conditions.' `
+        -Impact 'Performs read-only local and internet connectivity tests. It makes no router, firewall, or network changes and saves a text report to Downloads.' `
+        -RequiresConfirmation $true `
+        -RunsRemoteCode $true `
+        -InputTitle 'KVM report label' `
+        -InputMessage 'Enter the KVM machine name. It is used as the report label and for an optional Tailscale lookup.' `
+        -InputVariable 'KvmName' `
+        -Accent '#34D399' `
+        -Script {
+            Write-Host 'Downloading the ScriptBox KVM site diagnostic...' -ForegroundColor Cyan
+            $source = Invoke-RestMethod -UseBasicParsing 'https://raw.githubusercontent.com/GoblinRules/ScriptBox/main/scripts/KvmSiteNetworkDiagnostics.ps1'
+            $diagnostic = [scriptblock]::Create($source)
+            & $diagnostic -KvmName $KvmName -NonInteractive
         }
 )
 # ============================== END CATALOG ================================
@@ -461,6 +509,111 @@ function Show-ScriptBoxDialog {
     return $answer.Value
 }
 
+function Show-ScriptBoxInputDialog {
+    param(
+        [Parameter(Mandatory)][string]$Title,
+        [Parameter(Mandatory)][string]$Message,
+        [string]$InitialValue = ''
+    )
+
+    $inputXaml = @'
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Width="560" SizeToContent="Height" MinHeight="300"
+        WindowStartupLocation="CenterOwner" WindowStyle="None" AllowsTransparency="True"
+        Background="Transparent" Foreground="#F8FAFC" FontFamily="Segoe UI"
+        ResizeMode="NoResize" ShowInTaskbar="False">
+    <Border Background="#0D1224" BorderBrush="#22D3EE" BorderThickness="1" CornerRadius="16">
+        <Border.Effect>
+            <DropShadowEffect Color="#000000" BlurRadius="28" ShadowDepth="8" Opacity="0.65"/>
+        </Border.Effect>
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="52"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="70"/>
+            </Grid.RowDefinitions>
+            <Border x:Name="InputDragRegion" CornerRadius="15,15,0,0" BorderBrush="#2D3760" BorderThickness="0,0,0,1">
+                <Border.Background>
+                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                        <GradientStop Color="#171F3A" Offset="0"/>
+                        <GradientStop Color="#102B3D" Offset="1"/>
+                    </LinearGradientBrush>
+                </Border.Background>
+                <Grid Margin="18,0,10,0">
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <Ellipse Width="8" Height="8" Fill="#34D399" Margin="0,0,10,0"/>
+                        <TextBlock x:Name="InputTitle" FontSize="13" FontWeight="Bold" Foreground="#F8FAFC" VerticalAlignment="Center"/>
+                    </StackPanel>
+                    <Button x:Name="InputCloseButton" Content="×" Width="34" Height="30" Padding="0"
+                            HorizontalAlignment="Right" VerticalAlignment="Center" Background="Transparent"
+                            BorderThickness="0" Foreground="#94A3B8" FontSize="20" FontWeight="Normal"/>
+                </Grid>
+            </Border>
+
+            <StackPanel Grid.Row="1" Margin="26,24,26,24">
+                <TextBlock x:Name="InputMessage" TextWrapping="Wrap" FontSize="13" LineHeight="20" Foreground="#DCE5F5"/>
+                <TextBox x:Name="InputValue" Margin="0,18,0,0" Height="42" Padding="12,9"
+                         Background="#060912" Foreground="#67E8F9" CaretBrush="#67E8F9"
+                         BorderBrush="#314164" BorderThickness="1" FontFamily="Cascadia Mono,Consolas" FontSize="13"/>
+                <TextBlock Text="The value is passed only to this run." Margin="2,10,0,0"
+                           FontSize="10" FontWeight="SemiBold" Foreground="#64748B"/>
+            </StackPanel>
+
+            <Border Grid.Row="2" Background="#090D1A" CornerRadius="0,0,15,15" BorderBrush="#202A48" BorderThickness="0,1,0,0">
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="20,0">
+                    <Button x:Name="InputCancelButton" Content="CANCEL" MinWidth="104" Height="36" Margin="0,0,10,0"
+                            Background="#151D35" BorderBrush="#334263" Foreground="#CBD5E1"/>
+                    <Button x:Name="InputRunButton" Content="CONTINUE" MinWidth="112" Height="36"
+                            Background="#22D3EE" BorderBrush="#67E8F9" Foreground="#050816"/>
+                </StackPanel>
+            </Border>
+        </Grid>
+    </Border>
+</Window>
+'@
+    [xml]$inputXml = $inputXaml
+    $inputReader = New-Object System.Xml.XmlNodeReader($inputXml)
+    $popup = [Windows.Markup.XamlReader]::Load($inputReader)
+    if ($script:Window.IsVisible) { $popup.Owner = $script:Window }
+
+    $popup.FindName('InputTitle').Text = $Title.ToUpperInvariant()
+    $popup.FindName('InputMessage').Text = $Message
+    $inputBox = $popup.FindName('InputValue')
+    $inputBox.Text = $InitialValue
+    $result = [pscustomobject]@{ Confirmed = $false; Value = '' }
+
+    $accept = {
+        if ([string]::IsNullOrWhiteSpace($inputBox.Text)) { return }
+        $result.Confirmed = $true
+        $result.Value = $inputBox.Text.Trim()
+        $popup.Close()
+    }.GetNewClosure()
+    $popup.FindName('InputRunButton').Add_Click($accept)
+    $popup.FindName('InputCancelButton').Add_Click({ $popup.Close() }.GetNewClosure())
+    $popup.FindName('InputCloseButton').Add_Click({ $popup.Close() }.GetNewClosure())
+    $popup.FindName('InputDragRegion').Add_MouseLeftButtonDown({
+        param($sender, $eventArgs)
+        if ($eventArgs.LeftButton -eq [Windows.Input.MouseButtonState]::Pressed) { $popup.DragMove() }
+    }.GetNewClosure())
+    $inputBox.Add_KeyDown({
+        param($sender, $eventArgs)
+        if ($eventArgs.Key -eq [Windows.Input.Key]::Enter) { & $accept; $eventArgs.Handled = $true }
+    }.GetNewClosure())
+    $popup.Add_ContentRendered({
+        if ($env:SCRIPTBOX_TEST_MODE -eq '1') {
+            $inputBox.Text = 'scriptbox-test'
+            & $accept
+        } else {
+            $inputBox.Focus() | Out-Null
+            $inputBox.SelectAll()
+        }
+    }.GetNewClosure())
+
+    $popup.ShowDialog() | Out-Null
+    return $result
+}
+
 function Show-ScriptInfo {
     param([Parameter(Mandatory)]$Item)
 
@@ -532,6 +685,7 @@ function Show-ScriptInfo {
     $requirements += if ($Item.RequiresAdmin) { 'Administrator approval: required' } else { 'Administrator approval: not required' }
     $requirements += if ($Item.NeedsBypass) { 'Execution policy: Bypass for this child process' } else { 'Execution policy: current/default policy' }
     if ($Item.RunsRemoteCode) { $requirements += 'Source: remote code is downloaded at run time' }
+    if ($Item.InputVariable) { $requirements += "Input: $($Item.InputTitle) requested before launch" }
     $dialog.FindName('InfoRequirements').Text = ($requirements -join '  •  ')
     $dialog.FindName('InfoCode').Text = $Item.Script.ToString().Trim()
 
@@ -573,6 +727,17 @@ function Start-CatalogItem {
         }
     }
 
+    $inputPrelude = ''
+    if ($Item.InputVariable) {
+        $inputResult = Show-ScriptBoxInputDialog -Title $Item.InputTitle -Message $Item.InputMessage
+        if (-not $inputResult.Confirmed) {
+            Add-TerminalLine "Cancelled: $($Item.Name)"
+            return
+        }
+        $safeInputValue = $inputResult.Value.Replace("'", "''")
+        $inputPrelude = '$' + $Item.InputVariable + " = '" + $safeInputValue + "'" + [Environment]::NewLine
+    }
+
     try {
         if ([string]::IsNullOrWhiteSpace($script:TempRoot) -or -not (Test-Path -LiteralPath $script:TempRoot)) {
             $script:TempRoot = New-ScriptBoxTempRoot
@@ -590,7 +755,7 @@ function Start-CatalogItem {
 
     $safeLogPath = $logPath.Replace("'", "''")
     $safeName = $Item.Name.Replace("'", "''")
-    $payload = $Item.Script.ToString()
+    $payload = $inputPrelude + $Item.Script.ToString()
     $runnerTemplate = @'
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'Continue'
@@ -717,6 +882,7 @@ function New-Card {
     $badgeParts = @()
     if ($Item.RequiresAdmin) { $badgeParts += 'ADMIN' }
     if ($Item.NeedsBypass) { $badgeParts += 'BYPASS' }
+    if ($Item.InputVariable) { $badgeParts += 'INPUT' }
     if (-not $badgeParts) { $badgeParts += 'STANDARD' }
     $badge = New-Object Windows.Controls.TextBlock
     $badge.Text = ($badgeParts -join '  •  ')
@@ -907,6 +1073,10 @@ if ($env:SCRIPTBOX_TEST_MODE -eq '1') {
     }
 
     Show-ScriptBoxDialog -Title 'Dialog validation' -Message 'Validates the custom ScriptBox popup.' -Buttons OK -Kind Info | Out-Null
+    $testInput = Show-ScriptBoxInputDialog -Title 'Input validation' -Message 'Validates the matching ScriptBox input popup.'
+    if (-not $testInput.Confirmed -or $testInput.Value -ne 'scriptbox-test') {
+        throw 'Input dialog validation failed.'
+    }
     Show-ScriptInfo -Item $script:Catalog[0]
 
     # Reproduce a workspace disappearing while the UI remains open. The runner
@@ -915,7 +1085,9 @@ if ($env:SCRIPTBOX_TEST_MODE -eq '1') {
     Remove-Item -LiteralPath $removedTestRoot -Recurse -Force
 
     $testItem = New-CatalogItem -Id 'validation' -Name 'Runner validation' -Category 'Test' `
-        -Description 'Validates the output bridge.' -Script { Write-Output 'SCRIPTBOX_RUNNER_OK' }
+        -Description 'Validates the output bridge.' -InputTitle 'Runner input' `
+        -InputMessage 'Enter a runner validation value.' -InputVariable 'ValidationValue' `
+        -Script { Write-Output "SCRIPTBOX_RUNNER_OK:$ValidationValue" }
     Start-CatalogItem -Item $testItem
     if (-not $script:RunState.Process.WaitForExit(10000)) {
         throw 'Runner validation timed out.'
@@ -925,13 +1097,13 @@ if ($env:SCRIPTBOX_TEST_MODE -eq '1') {
     }
     $testLog = [IO.File]::ReadAllText($script:RunState.LogPath, [Text.Encoding]::UTF8)
     $testExitCode = [IO.File]::ReadAllText($script:RunState.DonePath).Trim()
-    if ($testExitCode -ne '0' -or $testLog -notmatch 'SCRIPTBOX_RUNNER_OK') {
+    if ($testExitCode -ne '0' -or $testLog -notmatch 'SCRIPTBOX_RUNNER_OK:scriptbox-test') {
         throw 'Runner validation did not capture the expected output.'
     }
     Remove-Item -LiteralPath $script:RunState.LogPath, $script:RunState.DonePath -Force -ErrorAction SilentlyContinue
     $script:RunState = $null
 
-    Write-Output "ScriptBox validation passed: $($script:Catalog.Count) catalog items, category navigation, WPF UI, and output bridge."
+    Write-Output "ScriptBox validation passed: $($script:Catalog.Count) catalog items, category navigation, matching dialogs, and output bridge."
     $script:OutputTimer.Stop()
     Remove-ScriptBoxTempRoot
     return
