@@ -11,7 +11,7 @@ Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 
 $script:AppName = 'ScriptBox'
-$script:Version = '1.0.0'
+$script:Version = '1.0.1'
 $script:Repository = 'https://github.com/GoblinRules/ScriptBox'
 $script:SelfSource = 'https://raw.githubusercontent.com/GoblinRules/ScriptBox/main/ScriptBox.ps1'
 $script:IconSource = 'https://raw.githubusercontent.com/GoblinRules/ScriptBox/main/assets/icon.ico'
@@ -351,6 +351,116 @@ function Set-RunButtonsEnabled {
     foreach ($button in $script:RunButtons) { $button.IsEnabled = $Enabled }
 }
 
+function Show-ScriptBoxDialog {
+    param(
+        [Parameter(Mandatory)][string]$Title,
+        [Parameter(Mandatory)][string]$Message,
+        [ValidateSet('OK', 'YesNo')][string]$Buttons = 'OK',
+        [ValidateSet('Info', 'Warning')][string]$Kind = 'Info'
+    )
+
+    $popupXaml = @'
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Width="560" SizeToContent="Height" MinHeight="245" MaxHeight="520"
+        WindowStartupLocation="CenterOwner" WindowStyle="None" AllowsTransparency="True"
+        Background="Transparent" Foreground="#F8FAFC" FontFamily="Segoe UI"
+        ResizeMode="NoResize" ShowInTaskbar="False">
+    <Border Background="#0D1224" BorderBrush="#A855F7" BorderThickness="1" CornerRadius="16">
+        <Border.Effect>
+            <DropShadowEffect Color="#000000" BlurRadius="28" ShadowDepth="8" Opacity="0.65"/>
+        </Border.Effect>
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="52"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="70"/>
+            </Grid.RowDefinitions>
+            <Border x:Name="PopupDragRegion" CornerRadius="15,15,0,0" BorderBrush="#2D3760" BorderThickness="0,0,0,1">
+                <Border.Background>
+                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                        <GradientStop Color="#171F3A" Offset="0"/>
+                        <GradientStop Color="#25113D" Offset="1"/>
+                    </LinearGradientBrush>
+                </Border.Background>
+                <Grid Margin="18,0,10,0">
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <Ellipse Width="8" Height="8" Fill="#22D3EE" Margin="0,0,10,0"/>
+                        <TextBlock x:Name="PopupTitle" FontSize="13" FontWeight="Bold" Foreground="#F8FAFC" VerticalAlignment="Center"/>
+                    </StackPanel>
+                    <Button x:Name="PopupCloseButton" Content="×" Width="34" Height="30" Padding="0"
+                            HorizontalAlignment="Right" VerticalAlignment="Center" Background="Transparent"
+                            BorderThickness="0" Foreground="#94A3B8" FontSize="20" FontWeight="Normal"/>
+                </Grid>
+            </Border>
+
+            <Grid Grid.Row="1" Margin="24,24,28,22">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="58"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <Border x:Name="PopupMarkBorder" Width="44" Height="44" CornerRadius="22" VerticalAlignment="Top"
+                        Background="#241535" BorderBrush="#F472B6" BorderThickness="1">
+                    <TextBlock x:Name="PopupMark" Text="!" HorizontalAlignment="Center" VerticalAlignment="Center"
+                               FontSize="22" FontWeight="Bold" Foreground="#F472B6"/>
+                </Border>
+                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                    <TextBlock x:Name="PopupMessage" TextWrapping="Wrap" FontSize="13" LineHeight="20" Foreground="#DCE5F5"/>
+                    <TextBlock x:Name="PopupHint" Text="Review the details above before continuing." Margin="0,12,0,0"
+                               FontSize="10" FontWeight="SemiBold" Foreground="#64748B"/>
+                </StackPanel>
+            </Grid>
+
+            <Border Grid.Row="2" Background="#090D1A" CornerRadius="0,0,15,15" BorderBrush="#202A48" BorderThickness="0,1,0,0">
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="20,0">
+                    <Button x:Name="PopupSecondaryButton" Content="CANCEL" MinWidth="104" Height="36" Margin="0,0,10,0"
+                            Background="#151D35" BorderBrush="#334263" Foreground="#CBD5E1"/>
+                    <Button x:Name="PopupPrimaryButton" Content="CONTINUE" MinWidth="112" Height="36"
+                            Background="#22D3EE" BorderBrush="#67E8F9" Foreground="#050816"/>
+                </StackPanel>
+            </Border>
+        </Grid>
+    </Border>
+</Window>
+'@
+    [xml]$popupXml = $popupXaml
+    $popupReader = New-Object System.Xml.XmlNodeReader($popupXml)
+    $popup = [Windows.Markup.XamlReader]::Load($popupReader)
+    if ($script:Window.IsVisible) { $popup.Owner = $script:Window }
+    $popup.FindName('PopupTitle').Text = $Title.ToUpperInvariant()
+    $popup.FindName('PopupMessage').Text = $Message
+
+    if ($Kind -eq 'Info') {
+        $popup.FindName('PopupMark').Text = 'i'
+        $popup.FindName('PopupMark').Foreground = '#22D3EE'
+        $popup.FindName('PopupMarkBorder').BorderBrush = '#22D3EE'
+        $popup.FindName('PopupHint').Text = 'ScriptBox keeps its temporary output until the task finishes.'
+    }
+
+    $primaryButton = $popup.FindName('PopupPrimaryButton')
+    $secondaryButton = $popup.FindName('PopupSecondaryButton')
+    if ($Buttons -eq 'OK') {
+        $primaryButton.Content = 'OK'
+        $secondaryButton.Visibility = 'Collapsed'
+    } else {
+        $primaryButton.Content = 'YES, RUN'
+    }
+
+    $answer = [pscustomobject]@{ Value = $false }
+    $primaryButton.Add_Click({ $answer.Value = $true; $popup.Close() }.GetNewClosure())
+    $secondaryButton.Add_Click({ $popup.Close() }.GetNewClosure())
+    $popup.FindName('PopupCloseButton').Add_Click({ $popup.Close() }.GetNewClosure())
+    $popup.FindName('PopupDragRegion').Add_MouseLeftButtonDown({
+        param($sender, $eventArgs)
+        if ($eventArgs.LeftButton -eq [Windows.Input.MouseButtonState]::Pressed) { $popup.DragMove() }
+    }.GetNewClosure())
+    if ($env:SCRIPTBOX_TEST_MODE -eq '1') {
+        $popup.Add_ContentRendered({ $popup.Close() }.GetNewClosure())
+    }
+    $popup.ShowDialog() | Out-Null
+    return $answer.Value
+}
+
 function Show-ScriptInfo {
     param([Parameter(Mandatory)]$Item)
 
@@ -358,43 +468,61 @@ function Show-ScriptInfo {
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Width="720" Height="610" MinWidth="620" MinHeight="500"
-        WindowStartupLocation="CenterOwner" Background="#0B1020" Foreground="#F8FAFC"
-        FontFamily="Segoe UI" ResizeMode="CanResizeWithGrip" ShowInTaskbar="False">
-    <Grid Margin="26">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*"/>
-            <RowDefinition Height="Auto"/>
-        </Grid.RowDefinitions>
-        <TextBlock x:Name="InfoTitle" FontSize="25" FontWeight="Bold"/>
-        <TextBlock x:Name="InfoDescription" Grid.Row="1" Margin="0,9,0,0" TextWrapping="Wrap" Foreground="#CBD5E1" FontSize="13"/>
-        <Border Grid.Row="2" Margin="0,18,0,16" Padding="14" CornerRadius="10" Background="#121A31" BorderBrush="#2B385B" BorderThickness="1">
-            <StackPanel>
-                <TextBlock x:Name="InfoImpact" TextWrapping="Wrap" Foreground="#FDE68A" FontSize="12"/>
-                <TextBlock x:Name="InfoRequirements" TextWrapping="Wrap" Foreground="#A7F3D0" FontSize="12" Margin="0,8,0,0"/>
-            </StackPanel>
-        </Border>
-        <Grid Grid.Row="3">
-            <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
-            <TextBlock Text="SCRIPT PREVIEW" FontSize="10" FontWeight="Bold" Foreground="#64748B" Margin="2,0,0,8"/>
-            <TextBox x:Name="InfoCode" Grid.Row="1" IsReadOnly="True" AcceptsReturn="True" TextWrapping="NoWrap"
-                     VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" Padding="14"
-                     Background="#060912" Foreground="#67E8F9" BorderBrush="#263252" BorderThickness="1"
-                     FontFamily="Cascadia Mono,Consolas" FontSize="11"/>
+        WindowStartupLocation="CenterOwner" Background="Transparent" Foreground="#F8FAFC"
+        FontFamily="Segoe UI" ResizeMode="CanResizeWithGrip" ShowInTaskbar="False"
+        WindowStyle="None" AllowsTransparency="True">
+    <Border Background="#0B1020" BorderBrush="#7C3AED" BorderThickness="1" CornerRadius="16">
+        <Grid>
+            <Grid.RowDefinitions><RowDefinition Height="52"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+            <Border x:Name="InfoDragRegion" CornerRadius="15,15,0,0" BorderBrush="#2D3760" BorderThickness="0,0,0,1">
+                <Border.Background>
+                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                        <GradientStop Color="#171F3A" Offset="0"/><GradientStop Color="#25113D" Offset="1"/>
+                    </LinearGradientBrush>
+                </Border.Background>
+                <Grid Margin="18,0,10,0">
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <Ellipse Width="8" Height="8" Fill="#22D3EE" Margin="0,0,10,0"/>
+                        <TextBlock Text="SCRIPT DETAILS" FontSize="11" FontWeight="Bold" Foreground="#E2E8F0" VerticalAlignment="Center"/>
+                    </StackPanel>
+                    <Button x:Name="WindowCloseButton" Content="×" Width="34" Height="30" Padding="0" HorizontalAlignment="Right"
+                            VerticalAlignment="Center" Background="Transparent" BorderThickness="0" Foreground="#94A3B8" FontSize="20"/>
+                </Grid>
+            </Border>
+            <Grid Grid.Row="1" Margin="26,22,26,26">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/><RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+                <TextBlock x:Name="InfoTitle" FontSize="25" FontWeight="Bold"/>
+                <TextBlock x:Name="InfoDescription" Grid.Row="1" Margin="0,9,0,0" TextWrapping="Wrap" Foreground="#CBD5E1" FontSize="13"/>
+                <Border Grid.Row="2" Margin="0,18,0,16" Padding="14" CornerRadius="10" Background="#121A31" BorderBrush="#2B385B" BorderThickness="1">
+                    <StackPanel>
+                        <TextBlock x:Name="InfoImpact" TextWrapping="Wrap" Foreground="#FDE68A" FontSize="12"/>
+                        <TextBlock x:Name="InfoRequirements" TextWrapping="Wrap" Foreground="#A7F3D0" FontSize="12" Margin="0,8,0,0"/>
+                    </StackPanel>
+                </Border>
+                <Grid Grid.Row="3">
+                    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+                    <TextBlock Text="SCRIPT PREVIEW" FontSize="10" FontWeight="Bold" Foreground="#64748B" Margin="2,0,0,8"/>
+                    <TextBox x:Name="InfoCode" Grid.Row="1" IsReadOnly="True" AcceptsReturn="True" TextWrapping="NoWrap"
+                             VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" Padding="14"
+                             Background="#060912" Foreground="#67E8F9" BorderBrush="#263252" BorderThickness="1"
+                             FontFamily="Cascadia Mono,Consolas" FontSize="11"/>
+                </Grid>
+                <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,18,0,0">
+                    <Button x:Name="CopyButton" Content="COPY SCRIPT" Margin="0,0,10,0" Padding="15,8" Background="#17213C" Foreground="#F8FAFC" BorderBrush="#33466E"/>
+                    <Button x:Name="CloseButton" Content="CLOSE" Padding="20,8" Background="#7C3AED" Foreground="White" BorderBrush="#A855F7"/>
+                </StackPanel>
+            </Grid>
         </Grid>
-        <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,18,0,0">
-            <Button x:Name="CopyButton" Content="COPY SCRIPT" Margin="0,0,10,0" Padding="15,8" Background="#17213C" Foreground="#F8FAFC" BorderBrush="#33466E"/>
-            <Button x:Name="CloseButton" Content="CLOSE" Padding="20,8" Background="#7C3AED" Foreground="White" BorderBrush="#A855F7"/>
-        </StackPanel>
-    </Grid>
+    </Border>
 </Window>
 '@
     [xml]$dialogXml = $dialogXaml
     $dialogReader = New-Object System.Xml.XmlNodeReader($dialogXml)
     $dialog = [Windows.Markup.XamlReader]::Load($dialogReader)
-    $dialog.Owner = $script:Window
+    if ($script:Window.IsVisible) { $dialog.Owner = $script:Window }
     $dialog.Title = "$($Item.Name) - ScriptBox"
     $dialog.FindName('InfoTitle').Text = $Item.Name
     $dialog.FindName('InfoDescription').Text = $Item.Description
@@ -409,9 +537,18 @@ function Show-ScriptInfo {
 
     $copyButton = $dialog.FindName('CopyButton')
     $closeButton = $dialog.FindName('CloseButton')
+    $windowCloseButton = $dialog.FindName('WindowCloseButton')
     $code = $Item.Script.ToString().Trim()
     $copyButton.Add_Click({ [Windows.Clipboard]::SetText($code) }.GetNewClosure())
     $closeButton.Add_Click({ $dialog.Close() }.GetNewClosure())
+    $windowCloseButton.Add_Click({ $dialog.Close() }.GetNewClosure())
+    $dialog.FindName('InfoDragRegion').Add_MouseLeftButtonDown({
+        param($sender, $eventArgs)
+        if ($eventArgs.LeftButton -eq [Windows.Input.MouseButtonState]::Pressed) { $dialog.DragMove() }
+    }.GetNewClosure())
+    if ($env:SCRIPTBOX_TEST_MODE -eq '1') {
+        $dialog.Add_ContentRendered({ $dialog.Close() }.GetNewClosure())
+    }
     $dialog.ShowDialog() | Out-Null
 }
 
@@ -429,22 +566,27 @@ function Start-CatalogItem {
         } else {
             $Item.Impact
         }
-        $choice = [Windows.MessageBox]::Show(
-            $warning,
-            "Run $($Item.Name)?",
-            [Windows.MessageBoxButton]::YesNo,
-            [Windows.MessageBoxImage]::Warning
-        )
-        if ($choice -ne [Windows.MessageBoxResult]::Yes) {
+        $confirmed = Show-ScriptBoxDialog -Title "Run $($Item.Name)?" -Message $warning -Buttons YesNo -Kind Warning
+        if (-not $confirmed) {
             Add-TerminalLine "Cancelled: $($Item.Name)"
             return
         }
     }
 
-    $runId = [Guid]::NewGuid().ToString('N')
-    $logPath = Join-Path $script:TempRoot "$runId.log"
-    $donePath = "$logPath.done"
-    [IO.File]::WriteAllText($logPath, '', (New-Object Text.UTF8Encoding($false)))
+    try {
+        if ([string]::IsNullOrWhiteSpace($script:TempRoot) -or -not (Test-Path -LiteralPath $script:TempRoot)) {
+            $script:TempRoot = New-ScriptBoxTempRoot
+            Add-TerminalLine 'The temporary workspace was missing and has been recreated safely.'
+        }
+        $runId = [Guid]::NewGuid().ToString('N')
+        $logPath = Join-Path $script:TempRoot "$runId.log"
+        $donePath = "$logPath.done"
+        [IO.File]::WriteAllText($logPath, '', (New-Object Text.UTF8Encoding($false)))
+    }
+    catch {
+        Add-TerminalLine ("Could not prepare the temporary output workspace: {0}" -f $_.Exception.Message)
+        return
+    }
 
     $safeLogPath = $logPath.Replace("'", "''")
     $safeName = $Item.Name.Replace("'", "''")
@@ -742,13 +884,10 @@ $script:Window.Title = "ScriptBox $($script:Version)"
 $script:Window.Add_Closing({
     param($sender, $eventArgs)
     if ($script:RunState) {
-        [Windows.MessageBox]::Show(
-            'A script is still running. Wait for it to finish before closing so ScriptBox can remove its temporary output safely.',
-            'Script still running',
-            [Windows.MessageBoxButton]::OK,
-            [Windows.MessageBoxImage]::Information
-        ) | Out-Null
         $eventArgs.Cancel = $true
+        Show-ScriptBoxDialog -Title 'Script still running' `
+            -Message 'Wait for it to finish before closing so ScriptBox can remove its temporary output safely.' `
+            -Buttons OK -Kind Info | Out-Null
         return
     }
     $script:OutputTimer.Stop()
@@ -766,6 +905,14 @@ if ($env:SCRIPTBOX_TEST_MODE -eq '1') {
     if ($script:ActiveCategory -ne 'Tools' -or $script:CardsHost.Children.Count -ne 3) {
         throw 'Category navigation validation failed.'
     }
+
+    Show-ScriptBoxDialog -Title 'Dialog validation' -Message 'Validates the custom ScriptBox popup.' -Buttons OK -Kind Info | Out-Null
+    Show-ScriptInfo -Item $script:Catalog[0]
+
+    # Reproduce a workspace disappearing while the UI remains open. The runner
+    # must recover instead of allowing a WPF click handler exception to escape.
+    $removedTestRoot = $script:TempRoot
+    Remove-Item -LiteralPath $removedTestRoot -Recurse -Force
 
     $testItem = New-CatalogItem -Id 'validation' -Name 'Runner validation' -Category 'Test' `
         -Description 'Validates the output bridge.' -Script { Write-Output 'SCRIPTBOX_RUNNER_OK' }
