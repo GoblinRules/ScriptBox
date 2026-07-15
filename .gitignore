@@ -1,0 +1,7 @@
+# ScriptBox is designed to run without persistent local state.
+*.log
+*.tmp
+*.user
+.vs/
+.vscode/
+
