@@ -721,12 +721,15 @@ $localIcon = if ($PSScriptRoot -and (Test-Path -LiteralPath (Join-Path $PSScript
 
 if ($localIcon) {
     try {
+        $iconBytes = [IO.File]::ReadAllBytes($localIcon)
+        $iconStream = New-Object IO.MemoryStream(,$iconBytes)
         $bitmap = New-Object Windows.Media.Imaging.BitmapImage
         $bitmap.BeginInit()
         $bitmap.CacheOption = [Windows.Media.Imaging.BitmapCacheOption]::OnLoad
-        $bitmap.UriSource = New-Object Uri($localIcon, [UriKind]::Absolute)
+        $bitmap.StreamSource = $iconStream
         $bitmap.EndInit()
         $bitmap.Freeze()
+        $iconStream.Dispose()
         $script:Window.Icon = $bitmap
         $script:AppIcon.Source = $bitmap
     } catch { }
