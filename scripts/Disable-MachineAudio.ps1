@@ -1,13 +1,14 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    Disables physical and Remote Desktop audio playback for the machine.
+    Disables physical and Remote Desktop audio for the machine.
 
 .DESCRIPTION
     Disables and stops Windows Audio and Windows Audio Endpoint Builder, then
     blocks Remote Desktop audio/video playback redirection by local machine
-    policy. The change persists across users and restarts until an
-    administrator manually reverses it.
+    policy. Playback and microphone/input audio will be unavailable. The
+    change persists across users and restarts until an administrator manually
+    reverses it.
 #>
 
 [CmdletBinding()]
@@ -54,8 +55,9 @@ try {
         throw "The final audio-disable check failed for: $details"
     }
 
-    Write-Host '[SUCCESS] Physical and Remote Desktop audio playback are disabled for this machine.'
+    Write-Host '[SUCCESS] Physical and Remote Desktop machine audio are disabled.'
     Write-Host '[SUCCESS] The audio services are disabled and will remain off after restart.'
+    Write-Host '[WARNING] Microphone and other audio input are also unavailable while the Windows audio services are disabled.'
     Write-Host '[WARNING] To restore sound, an administrator must remove the fDisableCam policy, set Windows Audio Endpoint Builder and Windows Audio to Automatic, then start both services.'
 }
 catch {
