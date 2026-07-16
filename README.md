@@ -19,8 +19,8 @@ ScriptBox does not install itself. The initial launcher fetches only the UI/cata
 ## Included sections
 
 - **Power** — restart/shutdown, always-on power, and locked-session network availability.
-- **Security** — hide power commands and enforce a ten-minute idle lock.
-- **Windows** — location services and supported IPv6 component policy.
+- **Security** — hide power commands, enforce a ten-minute idle lock, and allow password sign-in without removing Windows Hello PINs.
+- **Windows** — location services, supported IPv6 component policy, and persistent machine-wide audio suppression.
 - **Remote Access** — enable RDP, NLA, firewall access, and the signed-in user.
 - **Windows Update** — choose security-focused automatic updates or completely manual updates.
 - **Software** — install or update the core Ninite application bundle.
