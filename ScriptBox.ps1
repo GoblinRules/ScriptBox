@@ -11,14 +11,20 @@ Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 
 $script:AppName = 'ScriptBox'
-$script:Version = '1.1.0'
+$script:Version = '2.0.0'
 $script:Repository = 'https://github.com/GoblinRules/ScriptBox'
 $script:SelfSource = 'https://raw.githubusercontent.com/GoblinRules/ScriptBox/main/ScriptBox.ps1'
 $script:IconSource = 'https://raw.githubusercontent.com/GoblinRules/ScriptBox/main/assets/icon.png'
+$script:RawScriptRoot = 'https://raw.githubusercontent.com/GoblinRules/ScriptBox/main/scripts'
 $script:TempRoot = $null
 $script:ActiveCategory = 'All scripts'
 $script:RunState = $null
 $script:RunButtons = New-Object System.Collections.Generic.List[object]
+$script:SelectionControls = New-Object System.Collections.Generic.List[object]
+$script:SelectedIds = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+$script:RunQueue = New-Object 'System.Collections.Generic.Queue[object]'
+$script:QueueResults = New-Object System.Collections.Generic.List[object]
+$script:IsQueueRunning = $false
 
 # PowerShell 7 normally starts in MTA. WPF needs an STA thread, so hand off to
 # Windows PowerShell without writing the launcher itself to disk.
@@ -74,20 +80,38 @@ function New-CatalogItem {
         [Parameter(Mandatory)][string]$Name,
         [Parameter(Mandatory)][string]$Category,
         [Parameter(Mandatory)][string]$Description,
-        [Parameter(Mandatory)][scriptblock]$Script,
+        [string]$ScriptPath = '',
+        [string]$SourceUri = '',
+        [scriptblock]$InlineScript,
+        [string]$ScriptArguments = '',
         [string]$Impact = 'Makes a temporary or user-requested change.',
         [bool]$RequiresAdmin = $false,
         [bool]$NeedsBypass = $false,
-        [bool]$RequiresConfirmation = $false,
-        [bool]$RunsRemoteCode = $false,
+        [bool]$RequiresConfirmation = $true,
         [string]$InputTitle = '',
         [string]$InputMessage = '',
         [string]$InputVariable = '',
+        [bool]$InputOptional = $false,
+        [bool]$InputSecret = $false,
+        [ValidateSet('Summary', 'Terminal', 'None')][string]$ResultMode = 'Summary',
+        [string]$SuccessMessage = 'The requested task completed successfully.',
+        [string]$ConflictGroup = '',
+        [int]$RunOrder = 100,
         [string]$Accent = '#22D3EE'
     )
 
     if ($InputVariable -and $InputVariable -notmatch '^[A-Za-z_][A-Za-z0-9_]*$') {
         throw "Catalog input variable '$InputVariable' is not a valid PowerShell variable name."
+    }
+    $sourceCount = 0
+    if (-not [string]::IsNullOrWhiteSpace($ScriptPath)) { $sourceCount++ }
+    if (-not [string]::IsNullOrWhiteSpace($SourceUri)) { $sourceCount++ }
+    if ($InlineScript) { $sourceCount++ }
+    if ($sourceCount -ne 1) {
+        throw "Catalog item '$Id' must define exactly one of ScriptPath, SourceUri, or InlineScript."
+    }
+    if ($ScriptPath) {
+        $SourceUri = '{0}/{1}' -f $script:RawScriptRoot.TrimEnd('/'), $ScriptPath.TrimStart('/')
     }
 
     [pscustomobject]@{
@@ -95,16 +119,25 @@ function New-CatalogItem {
         Name                 = $Name
         Category             = $Category
         Description          = $Description
+        ScriptPath           = $ScriptPath
+        SourceUri            = $SourceUri
+        InlineScript         = $InlineScript
+        ScriptArguments      = $ScriptArguments
         Impact               = $Impact
         RequiresAdmin        = $RequiresAdmin
         NeedsBypass          = $NeedsBypass
         RequiresConfirmation = $RequiresConfirmation
-        RunsRemoteCode       = $RunsRemoteCode
+        RunsRemoteCode       = [string]::IsNullOrWhiteSpace($SourceUri) -eq $false
         InputTitle           = $InputTitle
         InputMessage         = $InputMessage
         InputVariable        = $InputVariable
+        InputOptional        = $InputOptional
+        InputSecret          = $InputSecret
+        ResultMode           = $ResultMode
+        SuccessMessage       = $SuccessMessage
+        ConflictGroup        = $ConflictGroup
+        RunOrder             = $RunOrder
         Accent               = $Accent
-        Script               = $Script
     }
 }
 
@@ -114,145 +147,27 @@ function New-CatalogItem {
 # are generated automatically from these definitions.
 # ============================================================================
 $script:Catalog = @(
-    New-CatalogItem `
-        -Id 'restart-windows' `
-        -Name 'Restart Windows' `
-        -Category 'Power' `
-        -Description 'Restarts this computer after a 10-second warning.' `
-        -Impact 'Open work may be lost. Windows displays a 10-second countdown before restarting.' `
-        -RequiresConfirmation $true `
-        -Accent '#F472B6' `
-        -Script {
-            Write-Host 'Scheduling a Windows restart in 10 seconds...' -ForegroundColor Magenta
-            shutdown.exe /r /t 10 /c "Restart started from ScriptBox"
-            Write-Host 'Restart scheduled. Run shutdown /a within 10 seconds to cancel.' -ForegroundColor Yellow
-        }
-
-    New-CatalogItem `
-        -Id 'shutdown-windows' `
-        -Name 'Shut Down Windows' `
-        -Category 'Power' `
-        -Description 'Shuts down this computer after a 30-second warning.' `
-        -Impact 'Open work may be lost. Windows displays a 30-second countdown before shutting down.' `
-        -RequiresConfirmation $true `
-        -Accent '#A855F7' `
-        -Script {
-            Write-Host 'Scheduling a Windows shutdown in 30 seconds...' -ForegroundColor Magenta
-            shutdown.exe /s /t 30 /c "Shutdown started from ScriptBox"
-            Write-Host 'Shutdown scheduled. Run shutdown /a within 30 seconds to cancel.' -ForegroundColor Yellow
-        }
-
-    New-CatalogItem `
-        -Id 'enable-location-services' `
-        -Name 'Enable Location Services' `
-        -Category 'Windows' `
-        -Description 'Removes common policy blocks and restores the Windows Geolocation Service.' `
-        -Impact 'Changes machine policy values, configures lfsvc for demand start, starts it, and refreshes Group Policy.' `
-        -RequiresAdmin $true `
-        -Accent '#34D399' `
-        -Script {
-            $locationKey = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\LocationAndSensors'
-            $appPrivacyKey = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\AppPrivacy'
-
-            Write-Host 'Removing policies that disable Windows location...' -ForegroundColor Cyan
-            Remove-ItemProperty -Path $locationKey -Name 'DisableLocation' -ErrorAction SilentlyContinue
-            Remove-ItemProperty -Path $locationKey -Name 'DisableWindowsLocationProvider' -ErrorAction SilentlyContinue
-            Remove-ItemProperty -Path $locationKey -Name 'DisableSensors' -ErrorAction SilentlyContinue
-            Remove-ItemProperty -Path $appPrivacyKey -Name 'LetAppsAccessLocation' -ErrorAction SilentlyContinue
-
-            Write-Host 'Restoring the Windows Geolocation Service...' -ForegroundColor Cyan
-            sc.exe config lfsvc start= demand
-            sc.exe start lfsvc
-
-            Write-Host 'Refreshing local policy. This may take a moment...' -ForegroundColor Cyan
-            gpupdate.exe /force
-            Write-Host 'Location restrictions removed. Restart Windows to finish applying the change.' -ForegroundColor Green
-        }
-
-    New-CatalogItem `
-        -Id 'launch-jetfuel' `
-        -Name 'Launch JetFuel' `
-        -Category 'Tools' `
-        -Description 'Downloads and runs the current JetFuel launcher.' `
-        -Impact 'Executes remote PowerShell from tails.revhooks.cc. Review the source you trust before running it.' `
-        -RequiresAdmin $true `
-        -NeedsBypass $true `
-        -RequiresConfirmation $true `
-        -RunsRemoteCode $true `
-        -Accent '#22D3EE' `
-        -Script {
-            Write-Host 'Downloading the JetFuel launcher...' -ForegroundColor Cyan
-            Invoke-RestMethod -UseBasicParsing 'https://tails.revhooks.cc' | Invoke-Expression
-        }
-
-    New-CatalogItem `
-        -Id 'launch-invokex' `
-        -Name 'Launch InvokeX' `
-        -Category 'Tools' `
-        -Description 'Downloads and runs the current InvokeX installer from GitHub.' `
-        -Impact 'Executes remote PowerShell from GoblinRules/InvokeX. The downloaded tool may create its own files.' `
-        -NeedsBypass $true `
-        -RequiresConfirmation $true `
-        -RunsRemoteCode $true `
-        -Accent '#C084FC' `
-        -Script {
-            Write-Host 'Downloading the InvokeX launcher...' -ForegroundColor Cyan
-            Invoke-RestMethod -UseBasicParsing 'https://raw.githubusercontent.com/GoblinRules/InvokeX/main/install.ps1' | Invoke-Expression
-        }
-
-    New-CatalogItem `
-        -Id 'launch-winutil' `
-        -Name 'Launch WinUtil' `
-        -Category 'Tools' `
-        -Description 'Downloads and runs Chris Titus Tech Windows Utility.' `
-        -Impact 'Executes remote PowerShell from christitus.com. Changes are made only when selected inside WinUtil.' `
-        -RequiresAdmin $true `
-        -NeedsBypass $true `
-        -RequiresConfirmation $true `
-        -RunsRemoteCode $true `
-        -Accent '#2DD4BF' `
-        -Script {
-            Write-Host 'Downloading Chris Titus Tech Windows Utility...' -ForegroundColor Cyan
-            Invoke-RestMethod -UseBasicParsing 'https://christitus.com/win' | Invoke-Expression
-        }
-
-    New-CatalogItem `
-        -Id 'kvm-client-tailscale-diagnostics' `
-        -Name 'KVM Client Tailscale Diagnostics' `
-        -Category 'Diagnostics' `
-        -Description 'Tests the viewer-side Tailscale path, latency, loss, NAT conditions, and JetKVM web reachability.' `
-        -Impact 'Reads local Tailscale status and performs ping, netcheck, and TCP tests. It changes no network settings and saves a text report to Downloads.' `
-        -RequiresConfirmation $true `
-        -RunsRemoteCode $true `
-        -InputTitle 'KVM machine name' `
-        -InputMessage 'Enter the KVM machine name exactly as it appears in Tailscale.' `
-        -InputVariable 'KvmName' `
-        -Accent '#22D3EE' `
-        -Script {
-            Write-Host 'Downloading the ScriptBox KVM client diagnostic...' -ForegroundColor Cyan
-            $source = Invoke-RestMethod -UseBasicParsing 'https://raw.githubusercontent.com/GoblinRules/ScriptBox/main/scripts/KvmClientTailscaleDiagnostics.ps1'
-            $diagnostic = [scriptblock]::Create($source)
-            & $diagnostic -KvmName $KvmName -PingCount 10 -NonInteractive
-        }
-
-    New-CatalogItem `
-        -Id 'kvm-site-network-diagnostics' `
-        -Name 'KVM Site Network Diagnostics' `
-        -Category 'Diagnostics' `
-        -Description 'Checks the KVM-site router path, NAT, firewall, UDP/STUN, port mapping, and Tailscale conditions.' `
-        -Impact 'Performs read-only local and internet connectivity tests. It makes no router, firewall, or network changes and saves a text report to Downloads.' `
-        -RequiresConfirmation $true `
-        -RunsRemoteCode $true `
-        -InputTitle 'KVM report label' `
-        -InputMessage 'Enter the KVM machine name. It is used as the report label and for an optional Tailscale lookup.' `
-        -InputVariable 'KvmName' `
-        -Accent '#34D399' `
-        -Script {
-            Write-Host 'Downloading the ScriptBox KVM site diagnostic...' -ForegroundColor Cyan
-            $source = Invoke-RestMethod -UseBasicParsing 'https://raw.githubusercontent.com/GoblinRules/ScriptBox/main/scripts/KvmSiteNetworkDiagnostics.ps1'
-            $diagnostic = [scriptblock]::Create($source)
-            & $diagnostic -KvmName $KvmName -NonInteractive
-        }
+    New-CatalogItem -Id 'restart-windows' -Name 'Restart Windows' -Category 'Power' -Description 'Restarts this computer after a 10-second warning.' -ScriptPath 'Restart-Windows.ps1' -Impact 'Open work may be lost. Windows displays a 10-second countdown before restarting.' -ConflictGroup 'power-action' -RunOrder 900 -Accent '#F472B6' -SuccessMessage 'Windows accepted the restart request and started the 10-second countdown.'
+    New-CatalogItem -Id 'shutdown-windows' -Name 'Shut Down Windows' -Category 'Power' -Description 'Shuts down this computer after a 30-second warning.' -ScriptPath 'Shutdown-Windows.ps1' -Impact 'Open work may be lost. Windows displays a 30-second countdown before shutting down.' -ConflictGroup 'power-action' -RunOrder 900 -Accent '#A855F7' -SuccessMessage 'Windows accepted the shutdown request and started the 30-second countdown.'
+    New-CatalogItem -Id 'always-on-power' -Name 'Keep PC Awake' -Category 'Power' -Description 'Keeps the display, computer, and laptop active for reliable remote access.' -ScriptPath 'Configure-AlwaysOnPower.ps1' -Impact 'Changes the active power plan, disables sleep and hibernation, and makes lid-close and power-button actions do nothing.' -RequiresAdmin $true -Accent '#22D3EE' -SuccessMessage 'The active power plan now keeps the computer awake on AC and battery.'
+    New-CatalogItem -Id 'keep-network-active' -Name 'Keep Network Active' -Category 'Power' -Description 'Reduces adapter and power-plan sleep behavior so networking remains available while locked.' -ScriptPath 'Keep-NetworkActive.ps1' -Impact 'Disables several network, PCIe, and USB power-saving features and writes a log under C:\Tools\Logs.' -RequiresAdmin $true -Accent '#2DD4BF' -SuccessMessage 'Supported network power-saving settings were disabled to improve locked-session connectivity.'
+    New-CatalogItem -Id 'hide-shutdown-options' -Name 'Hide Shutdown Options' -Category 'Security' -Description 'Hides Shutdown, Restart, Sleep, and Hibernate for existing and future Windows users.' -ScriptPath 'Hide-ShutdownOptions.ps1' -Impact 'Changes machine and per-user registry policy, including offline and Default user registry hives.' -RequiresAdmin $true -Accent '#C084FC' -SuccessMessage 'Power commands are hidden for existing profiles and the Default user profile.'
+    New-CatalogItem -Id 'idle-lock-10-minutes' -Name 'Lock After 10 Minutes' -Category 'Security' -Description 'Locks signed-in Windows sessions after ten minutes without keyboard or mouse activity.' -ScriptPath 'Configure-IdleLock.ps1' -Impact 'Sets computer and user inactivity policies and refreshes Group Policy. A sign-out or restart may be needed.' -RequiresAdmin $true -Accent '#F472B6' -SuccessMessage 'Windows is configured to lock idle sessions after ten minutes.'
+    New-CatalogItem -Id 'enable-location-services' -Name 'Enable Location Services' -Category 'Windows' -Description 'Removes common policy blocks and restores the Windows Geolocation Service.' -ScriptPath 'Enable-LocationServices.ps1' -Impact 'Changes machine policy values, configures lfsvc for demand start, starts it, and refreshes Group Policy.' -RequiresAdmin $true -Accent '#34D399' -SuccessMessage 'Location policy restrictions were removed and the Geolocation Service was restored.'
+    New-CatalogItem -Id 'disable-ipv6' -Name 'Disable IPv6 Components' -Category 'Windows' -Description 'Uses the supported DisabledComponents registry policy to disable Windows IPv6 components.' -ScriptPath 'Disable-IPv6.ps1' -Impact 'Sets a machine-wide networking registry value to 0xFF. A restart is required and IPv6-dependent services may be affected.' -RequiresAdmin $true -Accent '#F59E0B' -SuccessMessage 'IPv6 components are configured as disabled and the change will apply after restart.'
+    New-CatalogItem -Id 'enable-rdp-current-user' -Name 'Enable RDP for Current User' -Category 'Remote Access' -Description 'Enables Remote Desktop with NLA and permits the interactively signed-in user.' -ScriptPath 'Enable-RDPForCurrentUser.ps1' -Impact 'Enables Remote Desktop Services, opens inbound TCP/UDP 3389 firewall rules, and changes local group membership.' -RequiresAdmin $true -Accent '#22D3EE' -SuccessMessage 'Remote Desktop, NLA, firewall access, and user membership were configured successfully.'
+    New-CatalogItem -Id 'windows-update-security' -Name 'Security-Focused Updates' -Category 'Windows Update' -Description 'Keeps monthly updates automatic while blocking previews and deferring feature upgrades.' -ScriptPath 'Configure-WindowsUpdateSecurityFocused.ps1' -Impact 'Changes Windows Update policy, excludes drivers, defers feature upgrades for 365 days, and starts an update scan.' -RequiresAdmin $true -ConflictGroup 'windows-update-mode' -Accent '#34D399' -SuccessMessage 'Windows Update now prioritizes monthly quality updates without optional previews or drivers.'
+    New-CatalogItem -Id 'windows-update-manual' -Name 'Manual Updates Only' -Category 'Windows Update' -Description 'Stops automatic update downloads and installations while keeping manual checking available.' -ScriptPath 'Configure-WindowsUpdateManual.ps1' -Impact 'Removes conflicting update policy and disables automatic Windows Update downloads and installation.' -RequiresAdmin $true -ConflictGroup 'windows-update-mode' -Accent '#F59E0B' -SuccessMessage 'Windows Update is now manual only; someone must regularly check and install security updates.'
+    New-CatalogItem -Id 'install-ninite-apps' -Name 'Install Core Apps' -Category 'Software' -Description 'Installs or updates 7-Zip, Chrome, Firefox, and Notepad++ through Ninite.' -ScriptPath 'Install-NiniteApps.ps1' -Impact 'Downloads a signed Ninite executable, runs it unattended, installs or updates four applications, then removes the installer.' -RequiresAdmin $true -Accent '#34D399' -SuccessMessage '7-Zip, Chrome, Firefox, and Notepad++ were installed or updated.'
+    New-CatalogItem -Id 'deploy-laptop-lid-check' -Name 'Deploy Laptop Lid Check' -Category 'Utilities' -Description 'Adds a Public Desktop shortcut that shows the current laptop-lid state in a friendly popup.' -ScriptPath 'Deploy-LaptopLidCheck.ps1' -Impact 'Creates C:\ProgramData\LaptopLidCheck and C:\Users\Public\Desktop\Folder.lnk for all users.' -RequiresAdmin $true -Accent '#C084FC' -SuccessMessage 'The matching Laptop Lid Check popup and Public Desktop shortcut were installed.'
+    New-CatalogItem -Id 'launch-jetfuel' -Name 'Launch JetFuel' -Category 'Tools' -Description 'Downloads and runs the current JetFuel launcher.' -SourceUri 'https://tails.revhooks.cc' -Impact 'Executes remote PowerShell from tails.revhooks.cc. Review the source you trust before running it.' -RequiresAdmin $true -NeedsBypass $true -ResultMode 'None' -Accent '#22D3EE'
+    New-CatalogItem -Id 'launch-invokex' -Name 'Launch InvokeX' -Category 'Tools' -Description 'Downloads and runs the current InvokeX installer from GitHub.' -SourceUri 'https://raw.githubusercontent.com/GoblinRules/InvokeX/main/install.ps1' -Impact 'Executes remote PowerShell from GoblinRules/InvokeX. The downloaded tool may create its own files.' -NeedsBypass $true -ResultMode 'None' -Accent '#C084FC'
+    New-CatalogItem -Id 'launch-winutil' -Name 'Launch WinUtil' -Category 'Tools' -Description 'Downloads and runs Chris Titus Tech Windows Utility.' -SourceUri 'https://christitus.com/win' -Impact 'Executes remote PowerShell from christitus.com. Changes are made only when selected inside WinUtil.' -RequiresAdmin $true -NeedsBypass $true -ResultMode 'None' -Accent '#2DD4BF'
+    New-CatalogItem -Id 'kvm-client-tailscale-diagnostics' -Name 'KVM Client Tailscale Diagnostics' -Category 'Diagnostics' -Description 'Tests the viewer-side Tailscale path, latency, loss, NAT conditions, and JetKVM web reachability.' -ScriptPath 'KvmClientTailscaleDiagnostics.ps1' -ScriptArguments '-KvmName $KvmName -PingCount 10 -NonInteractive' -Impact 'Performs read-only Tailscale, ping, netcheck, and TCP tests and saves a text report to Downloads.' -InputTitle 'KVM machine name' -InputMessage 'Enter the KVM machine name exactly as it appears in Tailscale.' -InputVariable 'KvmName' -Accent '#22D3EE' -SuccessMessage 'The viewer-side KVM connection tests completed; review the good, warning, and problem counts below.'
+    New-CatalogItem -Id 'kvm-site-network-diagnostics' -Name 'KVM Site Network Diagnostics' -Category 'Diagnostics' -Description 'Checks the KVM-site router path, NAT, firewall, UDP/STUN, port mapping, and Tailscale conditions.' -ScriptPath 'KvmSiteNetworkDiagnostics.ps1' -ScriptArguments '-KvmName $KvmName -NonInteractive' -Impact 'Performs read-only local and internet connectivity tests and saves a text report to Downloads.' -InputTitle 'KVM report label' -InputMessage 'Enter the KVM machine name. It labels the report and enables an optional Tailscale lookup.' -InputVariable 'KvmName' -Accent '#34D399' -SuccessMessage 'The KVM-site network tests completed; review the good, warning, and problem counts below.'
+    New-CatalogItem -Id 'configure-hp-bios' -Name 'Configure HP BIOS' -Category 'BIOS' -Description 'Configures common writable HP commercial BIOS settings and installs HPCMSL if needed.' -ScriptPath 'Configure-HPBIOS.ps1' -ScriptArguments '-BIOSPassword $BIOSPassword' -Impact 'Installs HP management components if required and changes supported firmware settings. Test each model and restart afterward.' -RequiresAdmin $true -InputTitle 'BIOS setup password' -InputMessage 'Optional: enter the BIOS setup password, or leave it blank if none is configured.' -InputVariable 'BIOSPassword' -InputOptional $true -InputSecret $true -ConflictGroup 'bios-vendor' -Accent '#22D3EE' -SuccessMessage 'Supported HP BIOS settings were applied or reported with model-specific guidance.'
+    New-CatalogItem -Id 'configure-dell-bios' -Name 'Configure Dell BIOS' -Category 'BIOS' -Description 'Configures common Dell commercial BIOS settings using Dell Command Configure.' -ScriptPath 'Configure-DellBIOS.ps1' -ScriptArguments '-BIOSPassword $BIOSPassword' -Impact 'May install Dell Command Configure and changes supported firmware settings. Test each model and restart afterward.' -RequiresAdmin $true -InputTitle 'BIOS setup password' -InputMessage 'Optional: enter the BIOS setup password, or leave it blank if none is configured.' -InputVariable 'BIOSPassword' -InputOptional $true -InputSecret $true -ConflictGroup 'bios-vendor' -Accent '#C084FC' -SuccessMessage 'Supported Dell BIOS settings were applied or reported with model-specific guidance.'
+    New-CatalogItem -Id 'configure-lenovo-bios' -Name 'Configure Lenovo BIOS' -Category 'BIOS' -Description 'Configures common ThinkPad, ThinkCentre, and ThinkStation BIOS settings through Lenovo WMI.' -ScriptPath 'Configure-LenovoBIOS.ps1' -ScriptArguments '-BIOSPassword $BIOSPassword' -Impact 'Changes supported firmware settings through Lenovo WMI. Test each product family and restart afterward.' -RequiresAdmin $true -InputTitle 'BIOS setup password' -InputMessage 'Optional: enter the BIOS setup password, or leave it blank if none is configured.' -InputVariable 'BIOSPassword' -InputOptional $true -InputSecret $true -ConflictGroup 'bios-vendor' -Accent '#34D399' -SuccessMessage 'Supported Lenovo BIOS settings were applied or reported with model-specific guidance.'
 )
 # ============================== END CATALOG ================================
 
@@ -298,8 +213,8 @@ $windowXaml = @'
             <Grid Margin="20,22">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
                     <RowDefinition Height="*"/>
+                    <RowDefinition Height="0"/>
                     <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
                 <StackPanel Orientation="Horizontal">
@@ -312,10 +227,13 @@ $windowXaml = @'
                     </StackPanel>
                 </StackPanel>
 
-                <StackPanel Grid.Row="1" Margin="0,30,0,18">
+                <Grid Grid.Row="1" Margin="0,30,0,18">
+                    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
                     <TextBlock Text="SECTIONS" FontSize="10" FontWeight="Bold" Foreground="#64748B" Margin="4,0,0,10"/>
-                    <StackPanel x:Name="CategoryHost"/>
-                </StackPanel>
+                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                        <StackPanel x:Name="CategoryHost" Margin="0,0,6,0"/>
+                    </ScrollViewer>
+                </Grid>
 
                 <Border Grid.Row="3" Background="#11182D" BorderBrush="#263252" BorderThickness="1" CornerRadius="12" Padding="12">
                     <StackPanel>
@@ -329,13 +247,20 @@ $windowXaml = @'
         <Grid Grid.Column="1" Grid.Row="0" Margin="26,18,26,10">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="320"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="300"/>
             </Grid.ColumnDefinitions>
             <StackPanel>
                 <TextBlock Text="Choose a script" FontSize="25" FontWeight="Bold" Foreground="#F8FAFC"/>
                 <TextBlock x:Name="ResultsLabel" Text="Safe, visible execution with live output." FontSize="12" Foreground="#94A3B8" Margin="0,5,0,0"/>
             </StackPanel>
-            <Grid Grid.Column="1">
+            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Bottom" Margin="12,0,14,0">
+                <Button x:Name="ClearSelectionButton" Content="CLEAR" Height="42" Padding="12,7" Margin="0,0,8,0"
+                        Background="#151D35" BorderBrush="#334263" Foreground="#CBD5E1"/>
+                <Button x:Name="RunSelectedButton" Content="RUN SELECTED (0)" Height="42" Padding="14,7"
+                        Background="#7C3AED" BorderBrush="#A855F7" Foreground="White"/>
+            </StackPanel>
+            <Grid Grid.Column="2">
                 <TextBlock Text="SEARCH" FontSize="9" FontWeight="Bold" Foreground="#64748B" Margin="12,-3,0,0" Panel.ZIndex="1"/>
                 <TextBox x:Name="SearchBox" Height="42" Padding="13,12,13,8" FontSize="13" VerticalContentAlignment="Center"/>
             </Grid>
@@ -381,6 +306,8 @@ $script:ResultsLabel = $script:Window.FindName('ResultsLabel')
 $script:TerminalOutput = $script:Window.FindName('TerminalOutput')
 $script:TerminalStatus = $script:Window.FindName('TerminalStatus')
 $script:ClearTerminalButton = $script:Window.FindName('ClearTerminalButton')
+$script:RunSelectedButton = $script:Window.FindName('RunSelectedButton')
+$script:ClearSelectionButton = $script:Window.FindName('ClearSelectionButton')
 $script:PrivilegeLabel = $script:Window.FindName('PrivilegeLabel')
 $script:AppIcon = $script:Window.FindName('AppIcon')
 
@@ -397,6 +324,26 @@ function Add-TerminalLine {
 function Set-RunButtonsEnabled {
     param([bool]$Enabled)
     foreach ($button in $script:RunButtons) { $button.IsEnabled = $Enabled }
+    foreach ($control in $script:SelectionControls) { $control.IsEnabled = $Enabled }
+    $script:RunSelectedButton.IsEnabled = $Enabled -and $script:SelectedIds.Count -gt 0
+    $script:ClearSelectionButton.IsEnabled = $Enabled -and $script:SelectedIds.Count -gt 0
+}
+
+function Update-SelectionControls {
+    $count = $script:SelectedIds.Count
+    $script:RunSelectedButton.Content = "RUN SELECTED ($count)"
+    $enabled = -not $script:RunState -and -not $script:IsQueueRunning -and $count -gt 0
+    $script:RunSelectedButton.IsEnabled = $enabled
+    $script:ClearSelectionButton.IsEnabled = $enabled
+}
+
+function Set-CatalogItemSelected {
+    param(
+        [Parameter(Mandatory)][string]$Id,
+        [Parameter(Mandatory)][bool]$Selected
+    )
+    if ($Selected) { [void]$script:SelectedIds.Add($Id) } else { [void]$script:SelectedIds.Remove($Id) }
+    Update-SelectionControls
 }
 
 function Show-ScriptBoxDialog {
@@ -513,7 +460,9 @@ function Show-ScriptBoxInputDialog {
     param(
         [Parameter(Mandatory)][string]$Title,
         [Parameter(Mandatory)][string]$Message,
-        [string]$InitialValue = ''
+        [string]$InitialValue = '',
+        [bool]$Optional = $false,
+        [bool]$Secret = $false
     )
 
     $inputXaml = @'
@@ -556,7 +505,10 @@ function Show-ScriptBoxInputDialog {
                 <TextBox x:Name="InputValue" Margin="0,18,0,0" Height="42" Padding="12,9"
                          Background="#060912" Foreground="#67E8F9" CaretBrush="#67E8F9"
                          BorderBrush="#314164" BorderThickness="1" FontFamily="Cascadia Mono,Consolas" FontSize="13"/>
-                <TextBlock Text="The value is passed only to this run." Margin="2,10,0,0"
+                <PasswordBox x:Name="SecretInputValue" Visibility="Collapsed" Margin="0,18,0,0" Height="42" Padding="12,9"
+                             Background="#060912" Foreground="#67E8F9" CaretBrush="#67E8F9"
+                             BorderBrush="#314164" BorderThickness="1" FontFamily="Cascadia Mono,Consolas" FontSize="13"/>
+                <TextBlock x:Name="InputHint" Text="The value is passed only to this run." Margin="2,10,0,0"
                            FontSize="10" FontWeight="SemiBold" Foreground="#64748B"/>
             </StackPanel>
 
@@ -580,13 +532,23 @@ function Show-ScriptBoxInputDialog {
     $popup.FindName('InputTitle').Text = $Title.ToUpperInvariant()
     $popup.FindName('InputMessage').Text = $Message
     $inputBox = $popup.FindName('InputValue')
+    $secretBox = $popup.FindName('SecretInputValue')
     $inputBox.Text = $InitialValue
+    if ($Secret) {
+        $inputBox.Visibility = 'Collapsed'
+        $secretBox.Visibility = 'Visible'
+        $secretBox.Password = $InitialValue
+        $popup.FindName('InputHint').Text = 'The password is masked, passed only to this run, and is not written to the log.'
+    } elseif ($Optional) {
+        $popup.FindName('InputHint').Text = 'Optional: leave this blank to continue without a value.'
+    }
     $result = [pscustomobject]@{ Confirmed = $false; Value = '' }
 
     $accept = {
-        if ([string]::IsNullOrWhiteSpace($inputBox.Text)) { return }
+        $value = if ($Secret) { $secretBox.Password } else { $inputBox.Text }
+        if (-not $Optional -and [string]::IsNullOrWhiteSpace($value)) { return }
         $result.Confirmed = $true
-        $result.Value = $inputBox.Text.Trim()
+        $result.Value = if ($null -eq $value) { '' } elseif ($Secret) { [string]$value } else { $value.Trim() }
         $popup.Close()
     }.GetNewClosure()
     $popup.FindName('InputRunButton').Add_Click($accept)
@@ -596,22 +558,41 @@ function Show-ScriptBoxInputDialog {
         param($sender, $eventArgs)
         if ($eventArgs.LeftButton -eq [Windows.Input.MouseButtonState]::Pressed) { $popup.DragMove() }
     }.GetNewClosure())
-    $inputBox.Add_KeyDown({
+    $submitOnEnter = {
         param($sender, $eventArgs)
         if ($eventArgs.Key -eq [Windows.Input.Key]::Enter) { & $accept; $eventArgs.Handled = $true }
-    }.GetNewClosure())
+    }.GetNewClosure()
+    $inputBox.Add_KeyDown($submitOnEnter)
+    $secretBox.Add_KeyDown($submitOnEnter)
     $popup.Add_ContentRendered({
         if ($env:SCRIPTBOX_TEST_MODE -eq '1') {
-            $inputBox.Text = 'scriptbox-test'
+            if ($Secret) { $secretBox.Password = 'scriptbox-test' } else { $inputBox.Text = 'scriptbox-test' }
             & $accept
         } else {
-            $inputBox.Focus() | Out-Null
-            $inputBox.SelectAll()
+            if ($Secret) {
+                $secretBox.Focus() | Out-Null
+            } else {
+                $inputBox.Focus() | Out-Null
+                $inputBox.SelectAll()
+            }
         }
     }.GetNewClosure())
 
     $popup.ShowDialog() | Out-Null
     return $result
+}
+
+function Get-CatalogPreview {
+    param([Parameter(Mandatory)]$Item)
+
+    if ($Item.InlineScript) { return $Item.InlineScript.ToString().Trim() }
+    $arguments = if ($Item.ScriptArguments) { ' ' + $Item.ScriptArguments } else { '' }
+    return @(
+        '# Downloaded only when RUN is selected.',
+        "`$source = Invoke-RestMethod -UseBasicParsing '$($Item.SourceUri)'",
+        '$downloadedScript = [scriptblock]::Create($source)',
+        ('& $downloadedScript' + $arguments)
+    ) -join [Environment]::NewLine
 }
 
 function Show-ScriptInfo {
@@ -684,15 +665,20 @@ function Show-ScriptInfo {
     $requirements = @()
     $requirements += if ($Item.RequiresAdmin) { 'Administrator approval: required' } else { 'Administrator approval: not required' }
     $requirements += if ($Item.NeedsBypass) { 'Execution policy: Bypass for this child process' } else { 'Execution policy: current/default policy' }
-    if ($Item.RunsRemoteCode) { $requirements += 'Source: remote code is downloaded at run time' }
-    if ($Item.InputVariable) { $requirements += "Input: $($Item.InputTitle) requested before launch" }
+    if ($Item.RunsRemoteCode) { $requirements += 'Download: script source is fetched only when RUN begins' }
+    if ($Item.InputVariable) {
+        $inputTraits = @()
+        if ($Item.InputOptional) { $inputTraits += 'optional' } else { $inputTraits += 'required' }
+        if ($Item.InputSecret) { $inputTraits += 'masked' }
+        $requirements += "Input: $($Item.InputTitle) requested before launch ($($inputTraits -join ', '))"
+    }
     $dialog.FindName('InfoRequirements').Text = ($requirements -join '  •  ')
-    $dialog.FindName('InfoCode').Text = $Item.Script.ToString().Trim()
+    $code = Get-CatalogPreview -Item $Item
+    $dialog.FindName('InfoCode').Text = $code
 
     $copyButton = $dialog.FindName('CopyButton')
     $closeButton = $dialog.FindName('CloseButton')
     $windowCloseButton = $dialog.FindName('WindowCloseButton')
-    $code = $Item.Script.ToString().Trim()
     $copyButton.Add_Click({ [Windows.Clipboard]::SetText($code) }.GetNewClosure())
     $closeButton.Add_Click({ $dialog.Close() }.GetNewClosure())
     $windowCloseButton.Add_Click({ $dialog.Close() }.GetNewClosure())
@@ -706,15 +692,171 @@ function Show-ScriptInfo {
     $dialog.ShowDialog() | Out-Null
 }
 
-function Start-CatalogItem {
+function New-FriendlyResult {
+    param(
+        [Parameter(Mandatory)]$Item,
+        [Parameter(Mandatory)][int]$ExitCode,
+        [string]$Output = ''
+    )
+
+    $good = [regex]::Matches($Output, '(?im)\[(SUCCESS|GOOD)\]').Count
+    $warning = [regex]::Matches($Output, '(?im)\[(WARNING|WARN|CHECK|AMBER|UNSUPPORTED)\]').Count
+    $problem = [regex]::Matches($Output, '(?im)\[(ERROR|BAD|RED)\]').Count
+    if ($ExitCode -ne 0 -and $problem -eq 0) { $problem = 1 }
+
+    $overall = [regex]::Match($Output, '(?im)^.*?Overall:\s*(.+)$')
+    $summary = if ($overall.Success) { $overall.Groups[1].Value.Trim() } else { $Item.SuccessMessage }
+    if ($ExitCode -ne 0) {
+        $headline = 'This task needs attention'
+        $state = 'Error'
+        if (-not $overall.Success) { $summary = 'The task stopped before it could finish. Review the problem details and terminal output below.' }
+    } elseif ($warning -gt 0 -or $problem -gt 0) {
+        $headline = 'Completed with items to review'
+        $state = 'Warning'
+    } else {
+        $headline = 'Completed successfully'
+        $state = 'Success'
+    }
+
+    [pscustomobject]@{
+        Item         = $Item
+        ExitCode     = $ExitCode
+        Output       = $Output
+        GoodCount    = $good
+        WarningCount = $warning
+        ProblemCount = $problem
+        Headline     = $headline
+        Summary      = $summary
+        State        = $state
+    }
+}
+
+function Show-ScriptBoxResult {
+    param(
+        [Parameter(Mandatory)][string]$Title,
+        [Parameter(Mandatory)][string]$Headline,
+        [Parameter(Mandatory)][string]$Summary,
+        [Parameter(Mandatory)][string]$Output,
+        [int]$GoodCount = 0,
+        [int]$WarningCount = 0,
+        [int]$ProblemCount = 0,
+        [ValidateSet('Success', 'Warning', 'Error')][string]$State = 'Success'
+    )
+
+    $resultXaml = @'
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Width="780" Height="660" MinWidth="680" MinHeight="560"
+        WindowStartupLocation="CenterOwner" Background="Transparent" Foreground="#F8FAFC"
+        FontFamily="Segoe UI" ResizeMode="CanResizeWithGrip" ShowInTaskbar="False"
+        WindowStyle="None" AllowsTransparency="True">
+    <Border x:Name="ResultFrame" Background="#0B1020" BorderBrush="#34D399" BorderThickness="1" CornerRadius="16">
+        <Grid>
+            <Grid.RowDefinitions><RowDefinition Height="52"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+            <Border x:Name="ResultDragRegion" CornerRadius="15,15,0,0" BorderBrush="#2D3760" BorderThickness="0,0,0,1">
+                <Border.Background>
+                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                        <GradientStop Color="#171F3A" Offset="0"/><GradientStop Color="#102B3D" Offset="1"/>
+                    </LinearGradientBrush>
+                </Border.Background>
+                <Grid Margin="18,0,10,0">
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <Ellipse x:Name="ResultDot" Width="8" Height="8" Fill="#34D399" Margin="0,0,10,0"/>
+                        <TextBlock Text="SCRIPT RESULTS" FontSize="11" FontWeight="Bold" Foreground="#E2E8F0"/>
+                    </StackPanel>
+                    <Button x:Name="ResultCloseX" Content="×" Width="34" Height="30" Padding="0" HorizontalAlignment="Right"
+                            VerticalAlignment="Center" Background="Transparent" BorderThickness="0" Foreground="#94A3B8" FontSize="20"/>
+                </Grid>
+            </Border>
+            <Grid Grid.Row="1" Margin="26,22,26,26">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/><RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+                <TextBlock x:Name="ResultTitle" FontSize="13" FontWeight="Bold" Foreground="#94A3B8"/>
+                <TextBlock x:Name="ResultHeadline" Grid.Row="1" Margin="0,5,0,0" FontSize="25" FontWeight="Bold" TextWrapping="Wrap"/>
+                <Grid Grid.Row="2" Margin="0,18,0,16">
+                    <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
+                    <Border Margin="0,0,8,0" Padding="14" CornerRadius="10" Background="#0D241D" BorderBrush="#237A55" BorderThickness="1">
+                        <StackPanel><TextBlock Text="GOOD" Foreground="#86EFAC" FontSize="10" FontWeight="Bold"/><TextBlock x:Name="GoodCount" Foreground="#D1FAE5" FontSize="24" FontWeight="Bold"/></StackPanel>
+                    </Border>
+                    <Border Grid.Column="1" Margin="4,0" Padding="14" CornerRadius="10" Background="#2A2110" BorderBrush="#A16207" BorderThickness="1">
+                        <StackPanel><TextBlock Text="REVIEW" Foreground="#FDE68A" FontSize="10" FontWeight="Bold"/><TextBlock x:Name="ReviewCount" Foreground="#FEF3C7" FontSize="24" FontWeight="Bold"/></StackPanel>
+                    </Border>
+                    <Border Grid.Column="2" Margin="8,0,0,0" Padding="14" CornerRadius="10" Background="#2A141E" BorderBrush="#BE185D" BorderThickness="1">
+                        <StackPanel><TextBlock Text="PROBLEMS" Foreground="#F9A8D4" FontSize="10" FontWeight="Bold"/><TextBlock x:Name="ProblemCount" Foreground="#FCE7F3" FontSize="24" FontWeight="Bold"/></StackPanel>
+                    </Border>
+                </Grid>
+                <Grid Grid.Row="3">
+                    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+                    <Border Padding="14" CornerRadius="10" Background="#121A31" BorderBrush="#2B385B" BorderThickness="1" Margin="0,0,0,14">
+                        <TextBlock x:Name="ResultSummary" TextWrapping="Wrap" Foreground="#DCE5F5" FontSize="13" LineHeight="20"/>
+                    </Border>
+                    <TextBox x:Name="ResultOutput" Grid.Row="1" IsReadOnly="True" AcceptsReturn="True" TextWrapping="NoWrap"
+                             VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" Padding="14"
+                             Background="#060912" Foreground="#A7F3D0" BorderBrush="#263252" BorderThickness="1"
+                             FontFamily="Cascadia Mono,Consolas" FontSize="11"/>
+                </Grid>
+                <Button x:Name="ResultClose" Grid.Row="4" Content="DONE" HorizontalAlignment="Right" Margin="0,18,0,0"
+                        Padding="22,8" Background="#7C3AED" Foreground="White" BorderBrush="#A855F7"/>
+            </Grid>
+        </Grid>
+    </Border>
+</Window>
+'@
+    [xml]$resultXml = $resultXaml
+    $resultReader = New-Object System.Xml.XmlNodeReader($resultXml)
+    $dialog = [Windows.Markup.XamlReader]::Load($resultReader)
+    if ($script:Window.IsVisible) { $dialog.Owner = $script:Window }
+    $dialog.FindName('ResultTitle').Text = $Title.ToUpperInvariant()
+    $dialog.FindName('ResultHeadline').Text = $Headline
+    $dialog.FindName('ResultSummary').Text = $Summary
+    $dialog.FindName('ResultOutput').Text = if ([string]::IsNullOrWhiteSpace($Output)) { 'No additional terminal details were returned.' } else { $Output.Trim() }
+    $dialog.FindName('GoodCount').Text = [string]$GoodCount
+    $dialog.FindName('ReviewCount').Text = [string]$WarningCount
+    $dialog.FindName('ProblemCount').Text = [string]$ProblemCount
+    $accent = switch ($State) { 'Error' { '#F472B6' } 'Warning' { '#F59E0B' } default { '#34D399' } }
+    $dialog.FindName('ResultFrame').BorderBrush = $accent
+    $dialog.FindName('ResultDot').Fill = $accent
+    $dialog.FindName('ResultClose').Add_Click({ $dialog.Close() }.GetNewClosure())
+    $dialog.FindName('ResultCloseX').Add_Click({ $dialog.Close() }.GetNewClosure())
+    $dialog.FindName('ResultDragRegion').Add_MouseLeftButtonDown({
+        param($sender, $eventArgs)
+        if ($eventArgs.LeftButton -eq [Windows.Input.MouseButtonState]::Pressed) { $dialog.DragMove() }
+    }.GetNewClosure())
+    if ($env:SCRIPTBOX_TEST_MODE -eq '1') { $dialog.Add_ContentRendered({ $dialog.Close() }.GetNewClosure()) }
+    $dialog.ShowDialog() | Out-Null
+}
+
+function Get-CatalogPayload {
     param([Parameter(Mandatory)]$Item)
+
+    if ($Item.InlineScript) { return $Item.InlineScript.ToString() }
+    if ($Item.SourceUri -notmatch '^https://') { throw "Refusing to download a non-HTTPS script source: $($Item.SourceUri)" }
+    $safeUri = $Item.SourceUri.Replace("'", "''")
+    $safeTask = $Item.Name.Replace("'", "''")
+    $arguments = if ($Item.ScriptArguments) { ' ' + $Item.ScriptArguments } else { '' }
+    return @(
+        "Write-Host '[INFO] Downloading $safeTask only now because RUN was selected.'",
+        "`$source = Invoke-RestMethod -UseBasicParsing '$safeUri'",
+        "if ([string]::IsNullOrWhiteSpace(`$source)) { throw 'The downloaded script was empty.' }",
+        '$downloadedScript = [scriptblock]::Create($source)',
+        ('& $downloadedScript' + $arguments)
+    ) -join [Environment]::NewLine
+}
+
+function Start-CatalogItem {
+    param(
+        [Parameter(Mandatory)]$Item,
+        [switch]$FromQueue
+    )
 
     if ($script:RunState) {
         Add-TerminalLine 'Another script is already running.'
         return
     }
 
-    if ($Item.RequiresConfirmation) {
+    if ($Item.RequiresConfirmation -and -not $FromQueue) {
         $warning = if ($Item.RunsRemoteCode) {
             "$($Item.Impact)`n`nOnly continue if you trust the listed source."
         } else {
@@ -729,9 +871,14 @@ function Start-CatalogItem {
 
     $inputPrelude = ''
     if ($Item.InputVariable) {
-        $inputResult = Show-ScriptBoxInputDialog -Title $Item.InputTitle -Message $Item.InputMessage
+        $inputResult = Show-ScriptBoxInputDialog -Title $Item.InputTitle -Message $Item.InputMessage `
+            -Optional $Item.InputOptional -Secret $Item.InputSecret
         if (-not $inputResult.Confirmed) {
             Add-TerminalLine "Cancelled: $($Item.Name)"
+            if ($FromQueue) {
+                $script:QueueResults.Add((New-FriendlyResult -Item $Item -ExitCode 1 -Output '[WARNING] Cancelled by the user before launch.')) | Out-Null
+                Start-NextQueuedItem
+            }
             return
         }
         $safeInputValue = $inputResult.Value.Replace("'", "''")
@@ -750,12 +897,26 @@ function Start-CatalogItem {
     }
     catch {
         Add-TerminalLine ("Could not prepare the temporary output workspace: {0}" -f $_.Exception.Message)
+        if ($FromQueue) {
+            $script:QueueResults.Add((New-FriendlyResult -Item $Item -ExitCode 1 -Output ("[ERROR] " + $_.Exception.Message))) | Out-Null
+            Start-NextQueuedItem
+        }
         return
     }
 
     $safeLogPath = $logPath.Replace("'", "''")
     $safeName = $Item.Name.Replace("'", "''")
-    $payload = $inputPrelude + $Item.Script.ToString()
+    try {
+        $payload = $inputPrelude + (Get-CatalogPayload -Item $Item)
+    }
+    catch {
+        Add-TerminalLine ("Could not prepare {0}: {1}" -f $Item.Name, $_.Exception.Message)
+        if ($FromQueue) {
+            $script:QueueResults.Add((New-FriendlyResult -Item $Item -ExitCode 1 -Output ("[ERROR] " + $_.Exception.Message))) | Out-Null
+            Start-NextQueuedItem
+        }
+        return
+    }
     $runnerTemplate = @'
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'Continue'
@@ -816,6 +977,7 @@ exit $exitCode
             LogPath     = $logPath
             DonePath    = $donePath
             ReadLength  = 0
+            FromQueue   = [bool]$FromQueue
         }
         $script:TerminalStatus.Text = '  RUNNING'
         $script:TerminalStatus.Foreground = '#22D3EE'
@@ -826,6 +988,10 @@ exit $exitCode
         Add-TerminalLine ("Could not launch {0}: {1}" -f $Item.Name, $_.Exception.Message)
         $script:TerminalStatus.Text = '  READY'
         $script:TerminalStatus.Foreground = '#34D399'
+        if ($FromQueue) {
+            $script:QueueResults.Add((New-FriendlyResult -Item $Item -ExitCode 1 -Output ("[ERROR] " + $_.Exception.Message))) | Out-Null
+            Start-NextQueuedItem
+        }
     }
 }
 
@@ -879,16 +1045,32 @@ function New-Card {
     $badges = New-Object Windows.Controls.StackPanel
     $badges.Orientation = 'Horizontal'
     $badges.VerticalAlignment = 'Center'
+    $selectBox = New-Object Windows.Controls.CheckBox
+    $selectBox.Content = 'SELECT'
+    $selectBox.FontSize = 9
+    $selectBox.FontWeight = 'Bold'
+    $selectBox.Foreground = '#CBD5E1'
+    $selectBox.Margin = '0,0,10,0'
+    $selectBox.VerticalAlignment = 'Center'
+    $selectBox.IsChecked = $script:SelectedIds.Contains($Item.Id)
+    $selectBox.Add_Checked({
+        Set-CatalogItemSelected -Id $Item.Id -Selected $true
+    }.GetNewClosure())
+    $selectBox.Add_Unchecked({
+        Set-CatalogItemSelected -Id $Item.Id -Selected $false
+    }.GetNewClosure())
+    $script:SelectionControls.Add($selectBox)
     $badgeParts = @()
     if ($Item.RequiresAdmin) { $badgeParts += 'ADMIN' }
     if ($Item.NeedsBypass) { $badgeParts += 'BYPASS' }
-    if ($Item.InputVariable) { $badgeParts += 'INPUT' }
+    if ($Item.InputSecret) { $badgeParts += 'SECRET INPUT' } elseif ($Item.InputVariable) { $badgeParts += 'INPUT' }
     if (-not $badgeParts) { $badgeParts += 'STANDARD' }
     $badge = New-Object Windows.Controls.TextBlock
     $badge.Text = ($badgeParts -join '  •  ')
     $badge.FontSize = 9
     $badge.FontWeight = 'Bold'
     $badge.Foreground = if ($Item.RequiresAdmin) { '#FDE68A' } else { '#86EFAC' }
+    $badges.Children.Add($selectBox) | Out-Null
     $badges.Children.Add($badge) | Out-Null
     [Windows.Controls.Grid]::SetColumn($badges, 0)
 
@@ -932,6 +1114,7 @@ function New-Card {
 function Render-Cards {
     $script:CardsHost.Children.Clear()
     $script:RunButtons.Clear()
+    $script:SelectionControls.Clear()
     $query = $script:SearchBox.Text.Trim()
     $filtered = @($script:Catalog | Where-Object {
         ($script:ActiveCategory -eq 'All scripts' -or $_.Category -eq $script:ActiveCategory) -and
@@ -943,7 +1126,95 @@ function Render-Cards {
 
     foreach ($item in $filtered) { $script:CardsHost.Children.Add((New-Card -Item $item)) | Out-Null }
     $script:ResultsLabel.Text = "{0} script{1} in {2}" -f $filtered.Count, $(if ($filtered.Count -eq 1) { '' } else { 's' }), $script:ActiveCategory.ToLowerInvariant()
-    if ($script:RunState) { Set-RunButtonsEnabled -Enabled $false }
+    Update-SelectionControls
+    if ($script:RunState -or $script:IsQueueRunning) { Set-RunButtonsEnabled -Enabled $false }
+}
+
+function Clear-SelectedItems {
+    $script:SelectedIds.Clear()
+    Render-Cards
+    Add-TerminalLine 'Selection cleared.'
+}
+
+function Start-SelectedItems {
+    if ($script:RunState -or $script:IsQueueRunning) {
+        Add-TerminalLine 'Wait for the current task or queue to finish.'
+        return
+    }
+
+    $items = @($script:Catalog | Where-Object { $script:SelectedIds.Contains($_.Id) } | Sort-Object RunOrder)
+    if ($items.Count -lt 2) {
+        Show-ScriptBoxDialog -Title 'Select more scripts' -Message 'Select two or more script cards, then choose RUN SELECTED.' -Buttons OK -Kind Info | Out-Null
+        return
+    }
+
+    $conflicts = @($items | Where-Object ConflictGroup | Group-Object ConflictGroup | Where-Object Count -gt 1)
+    if ($conflicts.Count -gt 0) {
+        $details = @($conflicts | ForEach-Object {
+            "Choose only one of: " + (($_.Group | ForEach-Object Name) -join ', ')
+        }) -join [Environment]::NewLine
+        Show-ScriptBoxDialog -Title 'Selections conflict' -Message $details -Buttons OK -Kind Warning | Out-Null
+        return
+    }
+
+    $names = @($items | ForEach-Object { '• ' + $_.Name }) -join [Environment]::NewLine
+    $message = "The selected scripts will run one at a time in this order:`n`n$names`n`nScripts that need administrator rights may show a UAC prompt."
+    if (-not (Show-ScriptBoxDialog -Title "Run $($items.Count) selected scripts?" -Message $message -Buttons YesNo -Kind Warning)) {
+        Add-TerminalLine 'Selected script queue cancelled.'
+        return
+    }
+
+    $script:RunQueue.Clear()
+    $script:QueueResults.Clear()
+    foreach ($item in $items) { $script:RunQueue.Enqueue($item) }
+    $script:IsQueueRunning = $true
+    $script:SelectedIds.Clear()
+    Render-Cards
+    Set-RunButtonsEnabled -Enabled $false
+    Add-TerminalLine "Queued $($items.Count) scripts for sequential execution."
+    Start-NextQueuedItem
+}
+
+function Start-NextQueuedItem {
+    if (-not $script:IsQueueRunning -or $script:RunState) { return }
+
+    if ($script:RunQueue.Count -gt 0) {
+        $next = $script:RunQueue.Dequeue()
+        Add-TerminalLine ("Queue: starting {0} ({1} remaining after this)." -f $next.Name, $script:RunQueue.Count)
+        Start-CatalogItem -Item $next -FromQueue
+        return
+    }
+
+    $script:IsQueueRunning = $false
+    $script:TerminalStatus.Text = '  READY'
+    $script:TerminalStatus.Foreground = '#34D399'
+    Set-RunButtonsEnabled -Enabled $true
+    Update-SelectionControls
+
+    $results = @($script:QueueResults)
+    if ($results.Count -eq 0) {
+        Add-TerminalLine 'The queue finished without running a script.'
+        return
+    }
+
+    $good = ($results | Measure-Object GoodCount -Sum).Sum
+    $warning = ($results | Measure-Object WarningCount -Sum).Sum
+    $problem = ($results | Measure-Object ProblemCount -Sum).Sum
+    if ($null -eq $good) { $good = 0 }
+    if ($null -eq $warning) { $warning = 0 }
+    if ($null -eq $problem) { $problem = 0 }
+    $failed = @($results | Where-Object ExitCode -ne 0).Count
+    $state = if ($failed -gt 0) { 'Error' } elseif ($warning -gt 0 -or $problem -gt 0) { 'Warning' } else { 'Success' }
+    $headline = if ($failed -gt 0) { "$failed of $($results.Count) tasks need attention" } elseif ($warning -gt 0 -or $problem -gt 0) { 'Queue completed with items to review' } else { 'All selected tasks completed successfully' }
+    $summary = "ScriptBox completed $($results.Count) selected tasks sequentially. Each line below explains the final state."
+    $output = @($results | ForEach-Object {
+        $label = if ($_.ExitCode -ne 0) { '[ERROR]' } elseif ($_.WarningCount -gt 0 -or $_.ProblemCount -gt 0) { '[WARNING]' } else { '[SUCCESS]' }
+        "$label $($_.Item.Name) - $($_.Summary)"
+    }) -join [Environment]::NewLine
+    Add-TerminalLine "Selected script queue finished: $($results.Count) task(s), $failed failure(s)."
+    Show-ScriptBoxResult -Title 'Selected scripts' -Headline $headline -Summary $summary -Output $output `
+        -GoodCount $good -WarningCount $warning -ProblemCount $problem -State $state
+    $script:QueueResults.Clear()
 }
 
 function Select-Category {
@@ -975,6 +1246,8 @@ foreach ($categoryName in $categories) {
 }
 
 $script:SearchBox.Add_TextChanged({ Render-Cards })
+$script:RunSelectedButton.Add_Click({ Start-SelectedItems })
+$script:ClearSelectionButton.Add_Click({ Clear-SelectedItems })
 $script:ClearTerminalButton.Add_Click({
     $script:TerminalOutput.Clear()
     Add-TerminalLine 'Terminal cleared. ScriptBox is ready.'
@@ -995,12 +1268,23 @@ $script:OutputTimer.Add_Tick({
             }
         }
 
+        if (-not (Test-Path -LiteralPath $script:RunState.DonePath) -and $script:RunState.Process.HasExited) {
+            # Some third-party launchers call exit from inside their downloaded
+            # script, which bypasses the runner's finally block. Recover from
+            # that cleanly instead of leaving ScriptBox stuck in RUNNING.
+            [IO.File]::WriteAllText($script:RunState.DonePath, [string]$script:RunState.Process.ExitCode, (New-Object Text.UTF8Encoding($false)))
+        }
+
         if (Test-Path -LiteralPath $script:RunState.DonePath) {
             $exitCode = [IO.File]::ReadAllText($script:RunState.DonePath).Trim()
-            $finishedName = $script:RunState.Item.Name
-            Remove-Item -LiteralPath $script:RunState.LogPath, $script:RunState.DonePath -Force -ErrorAction SilentlyContinue
+            $finishedState = $script:RunState
+            $finishedName = $finishedState.Item.Name
+            $fullOutput = if (Test-Path -LiteralPath $finishedState.LogPath) {
+                [IO.File]::ReadAllText($finishedState.LogPath, [Text.Encoding]::UTF8)
+            } else { '' }
+            $result = New-FriendlyResult -Item $finishedState.Item -ExitCode ([int]$exitCode) -Output $fullOutput
+            Remove-Item -LiteralPath $finishedState.LogPath, $finishedState.DonePath -Force -ErrorAction SilentlyContinue
             $script:RunState = $null
-            Set-RunButtonsEnabled -Enabled $true
             if ($exitCode -eq '0') {
                 $script:TerminalStatus.Text = '  READY'
                 $script:TerminalStatus.Foreground = '#34D399'
@@ -1009,6 +1293,19 @@ $script:OutputTimer.Add_Tick({
                 $script:TerminalStatus.Text = '  ATTENTION'
                 $script:TerminalStatus.Foreground = '#F472B6'
                 Add-TerminalLine "$finishedName finished with an error. Review the output above."
+            }
+
+            if ($finishedState.FromQueue) {
+                $script:QueueResults.Add($result) | Out-Null
+                Start-NextQueuedItem
+            } else {
+                Set-RunButtonsEnabled -Enabled $true
+                Update-SelectionControls
+                if ($finishedState.Item.ResultMode -eq 'Summary') {
+                    Show-ScriptBoxResult -Title $finishedName -Headline $result.Headline -Summary $result.Summary `
+                        -Output $result.Output -GoodCount $result.GoodCount -WarningCount $result.WarningCount `
+                        -ProblemCount $result.ProblemCount -State $result.State
+                }
             }
         }
     }
@@ -1049,10 +1346,10 @@ $script:Window.Title = "ScriptBox $($script:Version)"
 
 $script:Window.Add_Closing({
     param($sender, $eventArgs)
-    if ($script:RunState) {
+    if ($script:RunState -or $script:IsQueueRunning) {
         $eventArgs.Cancel = $true
-        Show-ScriptBoxDialog -Title 'Script still running' `
-            -Message 'Wait for it to finish before closing so ScriptBox can remove its temporary output safely.' `
+        Show-ScriptBoxDialog -Title 'Scripts still running' `
+            -Message 'Wait for the current task and selected queue to finish before closing so ScriptBox can remove its temporary output safely.' `
             -Buttons OK -Kind Info | Out-Null
         return
     }
@@ -1061,11 +1358,26 @@ $script:Window.Add_Closing({
 })
 
 Select-Category -Category 'All scripts'
-Add-TerminalLine "ScriptBox $($script:Version) ready. Select i for details or RUN to execute."
+Add-TerminalLine "ScriptBox $($script:Version) ready. Select i for details, RUN for one task, or select several cards and RUN SELECTED."
+Add-TerminalLine 'Catalog scripts are downloaded on demand only when their run begins.'
 Add-TerminalLine 'Temporary runtime data will be removed when this window closes.'
 $script:OutputTimer.Start()
 
 if ($env:SCRIPTBOX_TEST_MODE -eq '1') {
+    if ($script:Catalog.Count -ne 21 -or @($script:Catalog | Where-Object InlineScript).Count -ne 0) {
+        throw 'Lazy catalog validation failed.'
+    }
+    foreach ($catalogItem in @($script:Catalog | Where-Object ScriptPath)) {
+        $catalogPath = Join-Path $PSScriptRoot (Join-Path 'scripts' $catalogItem.ScriptPath)
+        if (-not (Test-Path -LiteralPath $catalogPath)) {
+            throw "Catalog source file is missing: $($catalogItem.ScriptPath)"
+        }
+    }
+    $lazyPayload = Get-CatalogPayload -Item ($script:Catalog | Where-Object Id -eq 'always-on-power')
+    if ($lazyPayload -notmatch 'Configure-AlwaysOnPower.ps1' -or $lazyPayload -match 'powercfg.exe') {
+        throw 'On-demand payload validation failed.'
+    }
+
     $toolsButton = @($script:CategoryHost.Children | Where-Object Tag -eq 'Tools')[0]
     $toolsButton.RaiseEvent((New-Object Windows.RoutedEventArgs([Windows.Controls.Button]::ClickEvent)))
     if ($script:ActiveCategory -ne 'Tools' -or $script:CardsHost.Children.Count -ne 3) {
@@ -1077,7 +1389,31 @@ if ($env:SCRIPTBOX_TEST_MODE -eq '1') {
     if (-not $testInput.Confirmed -or $testInput.Value -ne 'scriptbox-test') {
         throw 'Input dialog validation failed.'
     }
+    $testSecret = Show-ScriptBoxInputDialog -Title 'Secret validation' -Message 'Validates a masked optional input.' -Optional $true -Secret $true
+    if (-not $testSecret.Confirmed -or $testSecret.Value -ne 'scriptbox-test') {
+        throw 'Secret input dialog validation failed.'
+    }
     Show-ScriptInfo -Item $script:Catalog[0]
+    $friendlyTest = New-FriendlyResult -Item $script:Catalog[0] -ExitCode 0 -Output '[SUCCESS] Good`n[WARNING] Review'
+    if ($friendlyTest.GoodCount -ne 1 -or $friendlyTest.WarningCount -ne 1 -or $friendlyTest.State -ne 'Warning') {
+        throw 'Friendly result interpretation failed.'
+    }
+    Show-ScriptBoxResult -Title 'Result validation' -Headline $friendlyTest.Headline -Summary $friendlyTest.Summary `
+        -Output $friendlyTest.Output -GoodCount 1 -WarningCount 1 -State Warning
+
+    $script:SelectionControls[0].IsChecked = $true
+    if ($script:SelectedIds.Count -ne 1 -or $script:RunSelectedButton.Content -notmatch '\(1\)') {
+        throw 'Multi-select control validation failed.'
+    }
+    $script:SelectionControls[1].IsChecked = $true
+    if ($script:SelectedIds.Count -ne 2 -or $script:RunSelectedButton.Content -notmatch '\(2\)') {
+        throw 'Multi-select count validation failed.'
+    }
+    if (@($script:Catalog | Where-Object ConflictGroup -eq 'windows-update-mode').Count -ne 2 -or
+        @($script:Catalog | Where-Object ConflictGroup -eq 'bios-vendor').Count -ne 3) {
+        throw 'Conflict group validation failed.'
+    }
+    Clear-SelectedItems
 
     # Reproduce a workspace disappearing while the UI remains open. The runner
     # must recover instead of allowing a WPF click handler exception to escape.
@@ -1087,7 +1423,7 @@ if ($env:SCRIPTBOX_TEST_MODE -eq '1') {
     $testItem = New-CatalogItem -Id 'validation' -Name 'Runner validation' -Category 'Test' `
         -Description 'Validates the output bridge.' -InputTitle 'Runner input' `
         -InputMessage 'Enter a runner validation value.' -InputVariable 'ValidationValue' `
-        -Script { Write-Output "SCRIPTBOX_RUNNER_OK:$ValidationValue" }
+        -RequiresConfirmation $false -InlineScript { Write-Output "SCRIPTBOX_RUNNER_OK:$ValidationValue" }
     Start-CatalogItem -Item $testItem
     if (-not $script:RunState.Process.WaitForExit(10000)) {
         throw 'Runner validation timed out.'
@@ -1103,7 +1439,35 @@ if ($env:SCRIPTBOX_TEST_MODE -eq '1') {
     Remove-Item -LiteralPath $script:RunState.LogPath, $script:RunState.DonePath -Force -ErrorAction SilentlyContinue
     $script:RunState = $null
 
-    Write-Output "ScriptBox validation passed: $($script:Catalog.Count) catalog items, category navigation, matching dialogs, and output bridge."
+    $queueTestOne = New-CatalogItem -Id 'queue-one' -Name 'Queue one' -Category 'Test' `
+        -Description 'Validates queue item one.' -RequiresConfirmation $false `
+        -InlineScript { Write-Output '[SUCCESS] SCRIPTBOX_QUEUE_ONE' }
+    $queueTestTwo = New-CatalogItem -Id 'queue-two' -Name 'Queue two' -Category 'Test' `
+        -Description 'Validates queue item two.' -RequiresConfirmation $false `
+        -InlineScript { Write-Output '[WARNING] SCRIPTBOX_QUEUE_TWO' }
+    $script:RunQueue.Clear()
+    $script:QueueResults.Clear()
+    $script:RunQueue.Enqueue($queueTestOne)
+    $script:RunQueue.Enqueue($queueTestTwo)
+    $script:IsQueueRunning = $true
+    Start-NextQueuedItem
+    $queueDeadline = [DateTime]::UtcNow.AddSeconds(15)
+    while ($script:IsQueueRunning -and [DateTime]::UtcNow -lt $queueDeadline) {
+        $frame = New-Object Windows.Threading.DispatcherFrame
+        [Windows.Threading.Dispatcher]::CurrentDispatcher.BeginInvoke(
+            [Windows.Threading.DispatcherPriority]::Background,
+            [Action]{ $frame.Continue = $false }
+        ) | Out-Null
+        [Windows.Threading.Dispatcher]::PushFrame($frame)
+        Start-Sleep -Milliseconds 50
+    }
+    if ($script:IsQueueRunning -or $script:RunState -or
+        $script:TerminalOutput.Text -notmatch 'SCRIPTBOX_QUEUE_ONE' -or
+        $script:TerminalOutput.Text -notmatch 'SCRIPTBOX_QUEUE_TWO') {
+        throw 'Sequential queue validation failed.'
+    }
+
+    Write-Output "ScriptBox validation passed: $($script:Catalog.Count) lazy catalog items, category navigation, matching dialogs, selection controls, sequential queue, and output bridge."
     $script:OutputTimer.Stop()
     Remove-ScriptBoxTempRoot
     return
