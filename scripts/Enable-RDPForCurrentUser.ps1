@@ -1,8 +1,8 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    Enables Remote Desktop and adds the currently signed-in Windows user to
-    the local Remote Desktop Users group.
+    Enables Remote Desktop for the PC and adds the currently signed-in Windows
+    user to the local Remote Desktop Users group.
 
 .DESCRIPTION
     Designed for ScriptBox, Action1, or another elevated deployment runner.
@@ -94,10 +94,19 @@ try {
 
     Write-Log INFO "Interactive user selected for RDP access: $TargetUser"
 
-    # Enable Remote Desktop and require Network Level Authentication.
+    # Enable Remote Desktop for the machine. Set both the normal system value
+    # and the local policy value so an existing local deny policy cannot leave
+    # the Settings toggle effectively off.
+    $terminalServerPath = 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server'
+    $terminalServerPolicyPath = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services'
+    New-Item -Path $terminalServerPolicyPath -Force | Out-Null
+
     Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server' `
         -Name 'fDenyTSConnections' -Type DWord -Value 0
+    Set-ItemProperty -Path $terminalServerPolicyPath `
+        -Name 'fDenyTSConnections' -Type DWord -Value 0
 
+    # Require Network Level Authentication for incoming connections.
     Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' `
         -Name 'UserAuthentication' -Type DWord -Value 1
 
@@ -143,14 +152,20 @@ try {
         Write-Log SUCCESS "Added '$TargetUser' to '$($rdpGroup.Name)'."
     }
 
-    $rdpEnabled = (Get-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server').fDenyTSConnections -eq 0
+    $rdpEnabled = (Get-ItemProperty -Path $terminalServerPath).fDenyTSConnections -eq 0
+    $rdpPolicyEnabled = (Get-ItemProperty -Path $terminalServerPolicyPath).fDenyTSConnections -eq 0
     $nlaEnabled = (Get-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp').UserAuthentication -eq 1
+    $rdpService = Get-Service -Name 'TermService'
+    $firewallEnabled = @($firewallRules | Where-Object {
+        -not (Get-NetFirewallRule -Name $_.Name -ErrorAction SilentlyContinue | Where-Object Enabled -eq 'True')
+    }).Count -eq 0
 
-    if (-not $rdpEnabled -or -not $nlaEnabled) {
+    if (-not $rdpEnabled -or -not $rdpPolicyEnabled -or -not $nlaEnabled -or
+        $rdpService.Status -ne 'Running' -or -not $firewallEnabled) {
         throw 'The final Remote Desktop configuration check failed.'
     }
 
-    Write-Log SUCCESS 'Remote Desktop is enabled, NLA is enabled, and the signed-in user is permitted to connect.'
+    Write-Log SUCCESS 'Remote Desktop is enabled for this PC, NLA is enabled, the firewall is open, and the signed-in user is permitted to connect.'
     Write-Log WARNING 'When connecting by RDP, use the account password. A Windows Hello PIN normally cannot be used as the remote credential.'
     return
 }

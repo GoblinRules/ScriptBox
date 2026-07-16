@@ -11,7 +11,7 @@ Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 
 $script:AppName = 'ScriptBox'
-$script:Version = '2.0.0'
+$script:Version = '2.0.1'
 $script:Repository = 'https://github.com/GoblinRules/ScriptBox'
 $script:SelfSource = 'https://raw.githubusercontent.com/GoblinRules/ScriptBox/main/ScriptBox.ps1'
 $script:IconSource = 'https://raw.githubusercontent.com/GoblinRules/ScriptBox/main/assets/icon.png'
@@ -155,7 +155,7 @@ $script:Catalog = @(
     New-CatalogItem -Id 'idle-lock-10-minutes' -Name 'Lock After 10 Minutes' -Category 'Security' -Description 'Locks signed-in Windows sessions after ten minutes without keyboard or mouse activity.' -ScriptPath 'Configure-IdleLock.ps1' -Impact 'Sets computer and user inactivity policies and refreshes Group Policy. A sign-out or restart may be needed.' -RequiresAdmin $true -Accent '#F472B6' -SuccessMessage 'Windows is configured to lock idle sessions after ten minutes.'
     New-CatalogItem -Id 'enable-location-services' -Name 'Enable Location Services' -Category 'Windows' -Description 'Removes common policy blocks and restores the Windows Geolocation Service.' -ScriptPath 'Enable-LocationServices.ps1' -Impact 'Changes machine policy values, configures lfsvc for demand start, starts it, and refreshes Group Policy.' -RequiresAdmin $true -Accent '#34D399' -SuccessMessage 'Location policy restrictions were removed and the Geolocation Service was restored.'
     New-CatalogItem -Id 'disable-ipv6' -Name 'Disable IPv6 Components' -Category 'Windows' -Description 'Uses the supported DisabledComponents registry policy to disable Windows IPv6 components.' -ScriptPath 'Disable-IPv6.ps1' -Impact 'Sets a machine-wide networking registry value to 0xFF. A restart is required and IPv6-dependent services may be affected.' -RequiresAdmin $true -Accent '#F59E0B' -SuccessMessage 'IPv6 components are configured as disabled and the change will apply after restart.'
-    New-CatalogItem -Id 'enable-rdp-current-user' -Name 'Enable RDP for Current User' -Category 'Remote Access' -Description 'Enables Remote Desktop with NLA and permits the interactively signed-in user.' -ScriptPath 'Enable-RDPForCurrentUser.ps1' -Impact 'Enables Remote Desktop Services, opens inbound TCP/UDP 3389 firewall rules, and changes local group membership.' -RequiresAdmin $true -Accent '#22D3EE' -SuccessMessage 'Remote Desktop, NLA, firewall access, and user membership were configured successfully.'
+    New-CatalogItem -Id 'enable-rdp-current-user' -Name 'Enable Remote Desktop' -Category 'Remote Access' -Description 'Enables Remote Desktop for this PC with NLA and permits the interactively signed-in user.' -ScriptPath 'Enable-RDPForCurrentUser.ps1' -Impact 'Enables the machine-level Remote Desktop setting and policy, starts Remote Desktop Services, opens inbound TCP/UDP 3389 firewall rules, and changes local group membership.' -RequiresAdmin $true -Accent '#22D3EE' -SuccessMessage 'Remote Desktop was enabled for this PC, with NLA, firewall access, and user membership configured successfully.'
     New-CatalogItem -Id 'windows-update-security' -Name 'Security-Focused Updates' -Category 'Windows Update' -Description 'Keeps monthly updates automatic while blocking previews and deferring feature upgrades.' -ScriptPath 'Configure-WindowsUpdateSecurityFocused.ps1' -Impact 'Changes Windows Update policy, excludes drivers, defers feature upgrades for 365 days, and starts an update scan.' -RequiresAdmin $true -ConflictGroup 'windows-update-mode' -Accent '#34D399' -SuccessMessage 'Windows Update now prioritizes monthly quality updates without optional previews or drivers.'
     New-CatalogItem -Id 'windows-update-manual' -Name 'Manual Updates Only' -Category 'Windows Update' -Description 'Stops automatic update downloads and installations while keeping manual checking available.' -ScriptPath 'Configure-WindowsUpdateManual.ps1' -Impact 'Removes conflicting update policy and disables automatic Windows Update downloads and installation.' -RequiresAdmin $true -ConflictGroup 'windows-update-mode' -Accent '#F59E0B' -SuccessMessage 'Windows Update is now manual only; someone must regularly check and install security updates.'
     New-CatalogItem -Id 'install-ninite-apps' -Name 'Install Core Apps' -Category 'Software' -Description 'Installs or updates 7-Zip, Chrome, Firefox, and Notepad++ through Ninite.' -ScriptPath 'Install-NiniteApps.ps1' -Impact 'Downloads a signed Ninite executable, runs it unattended, installs or updates four applications, then removes the installer.' -RequiresAdmin $true -Accent '#34D399' -SuccessMessage '7-Zip, Chrome, Firefox, and Notepad++ were installed or updated.'
@@ -323,18 +323,36 @@ function Add-TerminalLine {
 
 function Set-RunButtonsEnabled {
     param([bool]$Enabled)
-    foreach ($button in $script:RunButtons) { $button.IsEnabled = $Enabled }
-    foreach ($control in $script:SelectionControls) { $control.IsEnabled = $Enabled }
-    $script:RunSelectedButton.IsEnabled = $Enabled -and $script:SelectedIds.Count -gt 0
-    $script:ClearSelectionButton.IsEnabled = $Enabled -and $script:SelectedIds.Count -gt 0
+
+    foreach ($button in $script:RunButtons) {
+        $button.IsHitTestVisible = $Enabled
+        $button.Focusable = $Enabled
+        $button.Opacity = if ($Enabled) { 1.0 } else { 0.45 }
+    }
+    foreach ($control in $script:SelectionControls) {
+        $control.IsHitTestVisible = $Enabled
+        $control.Focusable = $Enabled
+        $control.Opacity = if ($Enabled) { 1.0 } else { 0.45 }
+    }
+    Update-SelectionControls
 }
 
 function Update-SelectionControls {
     $count = $script:SelectedIds.Count
     $script:RunSelectedButton.Content = "RUN SELECTED ($count)"
-    $enabled = -not $script:RunState -and -not $script:IsQueueRunning -and $count -gt 0
-    $script:RunSelectedButton.IsEnabled = $enabled
-    $script:ClearSelectionButton.IsEnabled = $enabled
+    $idle = -not $script:RunState -and -not $script:IsQueueRunning
+    $canRun = $idle -and $count -ge 2
+    $canClear = $idle -and $count -ge 1
+
+    $script:RunSelectedButton.IsHitTestVisible = $canRun
+    $script:RunSelectedButton.Focusable = $canRun
+    $script:RunSelectedButton.Opacity = if ($canRun) { 1.0 } else { 0.42 }
+    $script:RunSelectedButton.ToolTip = if ($canRun) { 'Run the selected scripts in order.' } else { 'Select at least two scripts to run a queue.' }
+
+    $script:ClearSelectionButton.IsHitTestVisible = $canClear
+    $script:ClearSelectionButton.Focusable = $canClear
+    $script:ClearSelectionButton.Opacity = if ($canClear) { 1.0 } else { 0.42 }
+    $script:ClearSelectionButton.ToolTip = if ($canClear) { 'Clear all selected scripts.' } else { 'No scripts are selected.' }
 }
 
 function Set-CatalogItemSelected {
@@ -1131,6 +1149,7 @@ function Render-Cards {
 }
 
 function Clear-SelectedItems {
+    if ($script:RunState -or $script:IsQueueRunning -or $script:SelectedIds.Count -eq 0) { return }
     $script:SelectedIds.Clear()
     Render-Cards
     Add-TerminalLine 'Selection cleared.'
@@ -1401,12 +1420,18 @@ if ($env:SCRIPTBOX_TEST_MODE -eq '1') {
     Show-ScriptBoxResult -Title 'Result validation' -Headline $friendlyTest.Headline -Summary $friendlyTest.Summary `
         -Output $friendlyTest.Output -GoodCount 1 -WarningCount 1 -State Warning
 
+    if ($script:RunSelectedButton.IsHitTestVisible -or $script:ClearSelectionButton.IsHitTestVisible -or
+        $script:RunSelectedButton.Opacity -ge 1 -or $script:RunSelectedButton.Background.Color.ToString() -ne '#FF7C3AED') {
+        throw 'Themed inactive selection control validation failed.'
+    }
     $script:SelectionControls[0].IsChecked = $true
-    if ($script:SelectedIds.Count -ne 1 -or $script:RunSelectedButton.Content -notmatch '\(1\)') {
+    if ($script:SelectedIds.Count -ne 1 -or $script:RunSelectedButton.Content -notmatch '\(1\)' -or
+        $script:RunSelectedButton.IsHitTestVisible -or -not $script:ClearSelectionButton.IsHitTestVisible) {
         throw 'Multi-select control validation failed.'
     }
     $script:SelectionControls[1].IsChecked = $true
-    if ($script:SelectedIds.Count -ne 2 -or $script:RunSelectedButton.Content -notmatch '\(2\)') {
+    if ($script:SelectedIds.Count -ne 2 -or $script:RunSelectedButton.Content -notmatch '\(2\)' -or
+        -not $script:RunSelectedButton.IsHitTestVisible -or $script:RunSelectedButton.Opacity -ne 1) {
         throw 'Multi-select count validation failed.'
     }
     if (@($script:Catalog | Where-Object ConflictGroup -eq 'windows-update-mode').Count -ne 2 -or
@@ -1414,6 +1439,10 @@ if ($env:SCRIPTBOX_TEST_MODE -eq '1') {
         throw 'Conflict group validation failed.'
     }
     Clear-SelectedItems
+    if ($script:SelectedIds.Count -ne 0 -or $script:RunSelectedButton.IsHitTestVisible -or
+        $script:ClearSelectionButton.IsHitTestVisible -or $script:ClearSelectionButton.Background.Color.ToString() -ne '#FF151D35') {
+        throw 'Themed cleared selection control validation failed.'
+    }
 
     # Reproduce a workspace disappearing while the UI remains open. The runner
     # must recover instead of allowing a WPF click handler exception to escape.
