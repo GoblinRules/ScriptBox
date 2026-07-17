@@ -35,6 +35,91 @@ function Test-Administrator {
     return $p.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 }
 
+function Get-HighestModuleVersion {
+    param([Parameter(Mandatory)][string]$Name)
+
+    $module = Get-Module -ListAvailable -Name $Name |
+        Sort-Object Version -Descending |
+        Select-Object -First 1
+    if ($module) { return [version]$module.Version }
+    return [version]'0.0'
+}
+
+function Initialize-PowerShellGalleryClient {
+    try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch {}
+
+    if (-not (Get-PackageProvider -Name NuGet -ListAvailable -ErrorAction SilentlyContinue |
+        Where-Object { [version]$_.Version -ge [version]'2.8.5.201' })) {
+        Write-Log 'Installing the supported NuGet package provider.'
+        Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force -Scope AllUsers | Out-Null
+    }
+
+    $gallery = Get-PSRepository -Name PSGallery -ErrorAction SilentlyContinue
+    if (-not $gallery) {
+        Write-Log 'Restoring the default PowerShell Gallery registration.'
+        Register-PSRepository -Default
+        $gallery = Get-PSRepository -Name PSGallery -ErrorAction Stop
+    }
+    if ($gallery.InstallationPolicy -ne 'Trusted') {
+        Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+    }
+
+    $powerShellGetVersion = Get-HighestModuleVersion -Name PowerShellGet
+    if ($powerShellGetVersion -lt [version]'2.2.5') {
+        Write-Log "PowerShellGet $powerShellGetVersion cannot read current HP module packages. Installing PowerShellGet 2.2.5."
+        Install-Module -Name PowerShellGet -RequiredVersion 2.2.5 -Repository PSGallery `
+            -Scope AllUsers -Force -AllowClobber
+    } else {
+        Write-Log "Compatible PowerShellGet $powerShellGetVersion is available."
+    }
+
+    $installedVersion = Get-HighestModuleVersion -Name PowerShellGet
+    if ($installedVersion -lt [version]'2.2.5') {
+        throw "PowerShellGet 2.2.5 was not installed successfully. Highest available version: $installedVersion"
+    }
+}
+
+function Install-HPCMSLInFreshPowerShell {
+    # PackageManagement assemblies cannot be safely replaced after the legacy
+    # copy has loaded. A fresh child process imports the new modules by their
+    # exact paths before it downloads HPCMSL and its HP.* dependencies.
+    $installer = @'
+$ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue'
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
+$packageManagement = Get-Module -ListAvailable -Name PackageManagement | Sort-Object Version -Descending | Select-Object -First 1
+$powerShellGet = Get-Module -ListAvailable -Name PowerShellGet | Sort-Object Version -Descending | Select-Object -First 1
+if (-not $packageManagement) { throw 'PackageManagement is not installed.' }
+if (-not $powerShellGet -or [version]$powerShellGet.Version -lt [version]'2.2.5') {
+    throw 'PowerShellGet 2.2.5 or later is not available in the fresh process.'
+}
+
+Import-Module $packageManagement.Path -Force
+Import-Module $powerShellGet.Path -Force
+if (-not (Get-PSRepository -Name PSGallery -ErrorAction SilentlyContinue)) { Register-PSRepository -Default }
+Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+Install-Module -Name HPCMSL -Repository PSGallery -Scope AllUsers -Force -AllowClobber -AcceptLicense
+'HPCMSL_INSTALL_OK'
+'@
+
+    $encodedInstaller = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($installer))
+    $powerShellExe = Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe'
+    $installerOutput = @(& $powerShellExe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass `
+        -EncodedCommand $encodedInstaller 2>&1)
+    $installerExitCode = $LASTEXITCODE
+
+    foreach ($line in $installerOutput) {
+        $text = [string]$line
+        if (-not [string]::IsNullOrWhiteSpace($text) -and $text -ne 'HPCMSL_INSTALL_OK') {
+            Write-Log "HPCMSL installer: $text"
+        }
+    }
+    if ($installerExitCode -ne 0 -or $installerOutput -notcontains 'HPCMSL_INSTALL_OK') {
+        throw "The fresh PowerShell HPCMSL installer failed with exit code $installerExitCode."
+    }
+}
+
 if (-not (Test-Administrator)) { Write-Log 'Run this script as Administrator/SYSTEM.' 'ERROR'; throw 'Administrator rights are required.' }
 $cs = Get-CimInstance Win32_ComputerSystem
 $model = (Get-CimInstance Win32_ComputerSystemProduct).Name
@@ -45,19 +130,25 @@ Write-Log "Detected HP model: $model"
 $SetupPassword = if ([string]::IsNullOrWhiteSpace($BIOSPassword)) { $null } else { $BIOSPassword }
 
 try {
-    if (-not (Get-Module -ListAvailable -Name HPCMSL)) {
-        Write-Log 'HPCMSL is not installed. Installing prerequisites and HP Client Management Script Library.'
-        try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch {}
-        if (-not (Get-PackageProvider -Name NuGet -ListAvailable -ErrorAction SilentlyContinue)) {
-            Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force -Scope AllUsers | Out-Null
+    $hpcmslReady = $false
+    if (Get-Module -ListAvailable -Name HPCMSL) {
+        try {
+            Import-Module HPCMSL -Force -ErrorAction Stop
+            $hpcmslReady = $true
+        } catch {
+            Write-Log "The existing HPCMSL installation is incomplete or incompatible and will be repaired: $($_.Exception.Message)" 'WARN'
         }
-        $gallery = Get-PSRepository -Name PSGallery -ErrorAction SilentlyContinue
-        if ($gallery -and $gallery.InstallationPolicy -ne 'Trusted') {
-            Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
-        }
-        Install-Module -Name HPCMSL -Scope AllUsers -Force -AllowClobber
     }
-    Import-Module HPCMSL -Force
+
+    if (-not $hpcmslReady) {
+        Write-Log 'Installing compatible prerequisites and HP Client Management Script Library.'
+        Initialize-PowerShellGalleryClient
+        Install-HPCMSLInFreshPowerShell
+        if (-not (Get-Module -ListAvailable -Name HPCMSL)) {
+            throw 'HPCMSL installation completed but the module is not visible in the system module path.'
+        }
+        Import-Module HPCMSL -Force -ErrorAction Stop
+    }
     Write-Log 'HPCMSL loaded.' 'SUCCESS'
 } catch {
     Write-Log "Unable to install/load HPCMSL: $($_.Exception.Message)" 'ERROR'
