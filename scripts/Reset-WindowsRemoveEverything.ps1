@@ -20,11 +20,18 @@ try {
     $instance = Get-CimInstance -Namespace 'root\cimv2\mdm\dmmap' -ClassName 'MDM_RemoteWipe' `
         -Filter "ParentID='./Vendor/MSFT' and InstanceID='RemoteWipe'" -OperationTimeoutSec 45
     if ($null -eq $instance) { exit 13 }
-    if (-not $instance.CimClass.CimClassMethods.ContainsKey('doWipeProtectedMethod')) { exit 12 }
-    exit 0
 }
 catch [Microsoft.Management.Infrastructure.CimException] { exit 14 }
 catch { exit 15 }
+
+try {
+    $protectedMethod = $instance.CimClass.CimClassMethods |
+        Where-Object { $_.Name -eq 'doWipeProtectedMethod' } |
+        Select-Object -First 1
+    if ($null -eq $protectedMethod) { exit 12 }
+    exit 0
+}
+catch { exit 16 }
 '@
 
 $wipePayload = @'
@@ -129,7 +136,8 @@ try {
             12 { 'the doWipeProtectedMethod method is missing' }
             13 { 'the RemoteWipe instance is unavailable' }
             14 { 'the MDM Bridge provider rejected or timed out the CIM request' }
-            15 { 'the Local System probe failed unexpectedly' }
+            15 { 'the Local System CIM query failed unexpectedly' }
+            16 { 'the RemoteWipe method metadata could not be inspected' }
             default { "the probe process returned exit code $probeResult" }
         }
         throw "Microsoft protected wipe is unavailable: $probeFailure. No wipe was scheduled."
