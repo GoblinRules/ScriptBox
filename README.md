@@ -18,7 +18,8 @@ ScriptBox does not install itself. The initial launcher fetches only the UI/cata
 
 ## Included sections
 
-- **Power** — restart/shutdown, always-on power, and locked-session network availability.
+- **Power** — restart, always-on power, and locked-session network availability.
+- **Warning - Use With Caution** — shut down Windows or start a guarded erase-and-reinstall workflow.
 - **Security** — hide power commands, enforce a ten-minute idle lock, and allow password sign-in without removing Windows Hello PINs.
 - **Windows** — location services, supported IPv6 component policy, and persistent machine-wide audio suppression.
 - **Remote Access** — enable RDP, NLA, firewall access, and the signed-in user.
@@ -56,10 +57,13 @@ New-CatalogItem `
     -ResultMode 'Summary' `
     -SuccessMessage 'Explains success in plain language.' `
     -ConflictGroup '' `
+    -CanQueue $true `
     -Accent '#22D3EE'
 ```
 
 Categories and counts are generated automatically. `ScriptPath` resolves under the repository `scripts` folder and is fetched only when that card runs. `SourceUri` can instead point at an external HTTPS PowerShell launcher. Set the input fields when a script needs one value before launch; secret input is masked and never written to ScriptBox output. Give mutually exclusive cards the same `ConflictGroup`. Delete a metadata entry and its standalone file to remove a script.
+
+Set `CanQueue` to `$false` for an action that must only be run by itself. Its card will not offer the **SELECT** control.
 
 ## Design and safety notes
 
@@ -68,6 +72,7 @@ Categories and counts are generated automatically. `ScriptPath` resolves under t
 - Script output is streamed from a temporary UTF-8 log and removed after completion or app shutdown.
 - Multi-selection runs sequentially, avoiding simultaneous registry, policy, installer, and firmware changes.
 - Restart and shutdown can be cancelled during their countdown with `shutdown /a`.
+- **Erase and Reinstall Windows** requires the exact phrase `ERASE THIS PC`, administrator approval, and final confirmation in Windows Recovery. Choose **Remove everything**, **Cloud download**, and enable **Clean data** to avoid retaining files on the Windows drive. If BitLocker is enabled, have the recovery key available. Erasing additional drives remains an explicit choice in the reset wizard.
 - Remote launchers can change independently. Their entries are marked clearly and require confirmation.
 - The KVM diagnostics make no network, firewall, Tailscale, or router changes. By default, each saves a timestamped text report to the current user's Downloads folder.
 - Do not add passwords, tokens, private URLs, or other secrets to this public repository.

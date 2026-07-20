@@ -11,7 +11,7 @@ Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 
 $script:AppName = 'ScriptBox'
-$script:Version = '2.1.3'
+$script:Version = '2.1.4'
 $script:Repository = 'https://github.com/GoblinRules/ScriptBox'
 $script:SelfSource = 'https://raw.githubusercontent.com/GoblinRules/ScriptBox/main/ScriptBox.ps1'
 $script:IconSource = 'https://raw.githubusercontent.com/GoblinRules/ScriptBox/main/assets/icon.png'
@@ -96,6 +96,7 @@ function New-CatalogItem {
         [ValidateSet('Summary', 'Terminal', 'None')][string]$ResultMode = 'Summary',
         [string]$SuccessMessage = 'The requested task completed successfully.',
         [string]$ConflictGroup = '',
+        [bool]$CanQueue = $true,
         [int]$RunOrder = 100,
         [string]$Accent = '#22D3EE'
     )
@@ -136,6 +137,7 @@ function New-CatalogItem {
         ResultMode           = $ResultMode
         SuccessMessage       = $SuccessMessage
         ConflictGroup        = $ConflictGroup
+        CanQueue             = $CanQueue
         RunOrder             = $RunOrder
         Accent               = $Accent
     }
@@ -148,7 +150,8 @@ function New-CatalogItem {
 # ============================================================================
 $script:Catalog = @(
     New-CatalogItem -Id 'restart-windows' -Name 'Restart Windows' -Category 'Power' -Description 'Restarts this computer after a 10-second warning.' -ScriptPath 'Restart-Windows.ps1' -Impact 'Open work may be lost. Windows displays a 10-second countdown before restarting.' -ConflictGroup 'power-action' -RunOrder 900 -Accent '#F472B6' -SuccessMessage 'Windows accepted the restart request and started the 10-second countdown.'
-    New-CatalogItem -Id 'shutdown-windows' -Name 'Shut Down Windows' -Category 'Power' -Description 'Shuts down this computer after a 30-second warning.' -ScriptPath 'Shutdown-Windows.ps1' -Impact 'Open work may be lost. Windows displays a 30-second countdown before shutting down.' -ConflictGroup 'power-action' -RunOrder 900 -Accent '#A855F7' -SuccessMessage 'Windows accepted the shutdown request and started the 30-second countdown.'
+    New-CatalogItem -Id 'shutdown-windows' -Name 'Shut Down Windows' -Category 'Warning - Use With Caution' -Description 'Shuts down this computer after a 30-second warning.' -ScriptPath 'Shutdown-Windows.ps1' -Impact 'Open work may be lost. Windows displays a 30-second countdown before shutting down.' -ConflictGroup 'power-action' -RunOrder 900 -Accent '#A855F7' -SuccessMessage 'Windows accepted the shutdown request and started the 30-second countdown.'
+    New-CatalogItem -Id 'erase-reinstall-windows' -Name 'Erase and Reinstall Windows' -Category 'Warning - Use With Caution' -Description 'Starts the guided Reset this PC workflow for a fresh Windows installation with no personal files retained.' -ScriptPath 'Reset-WindowsRemoveEverything.ps1' -ScriptArguments '-Confirmation $EraseConfirmation' -Impact 'PERMANENT DATA LOSS: removes every user profile, personal file, application, and setting from the Windows drive when Remove everything and Clean data are confirmed in Windows Recovery. Other drives are erased only if explicitly selected in the reset wizard. This cannot be undone.' -RequiresAdmin $true -InputTitle 'Type ERASE THIS PC to continue' -InputMessage 'This action is irreversible. Back up anything required and have the BitLocker recovery key available. Type ERASE THIS PC exactly to open the full-reset workflow.' -InputVariable 'EraseConfirmation' -ConflictGroup 'power-action' -CanQueue $false -ResultMode 'Terminal' -RunOrder 999 -Accent '#EF4444' -SuccessMessage 'Windows Recovery was opened. Complete the displayed Remove everything, Cloud download, and Clean data choices to erase and reinstall Windows.'
     New-CatalogItem -Id 'always-on-power' -Name 'Keep PC Awake' -Category 'Power' -Description 'Keeps the display, computer, and laptop active for reliable remote access.' -ScriptPath 'Configure-AlwaysOnPower.ps1' -Impact 'Changes the active power plan, disables sleep and hibernation, and makes lid-close and power-button actions do nothing.' -RequiresAdmin $true -Accent '#22D3EE' -SuccessMessage 'The active power plan now keeps the computer awake on AC and battery.'
     New-CatalogItem -Id 'keep-network-active' -Name 'Keep Network Active' -Category 'Power' -Description 'Reduces adapter and power-plan sleep behavior so networking remains available while locked.' -ScriptPath 'Keep-NetworkActive.ps1' -Impact 'Disables several network, PCIe, and USB power-saving features and writes a log under C:\Tools\Logs.' -RequiresAdmin $true -Accent '#2DD4BF' -SuccessMessage 'Supported network power-saving settings were disabled to improve locked-session connectivity.'
     New-CatalogItem -Id 'hide-shutdown-options' -Name 'Hide Shutdown Options' -Category 'Security' -Description 'Hides Shutdown, Restart, Sleep, and Hibernate for existing and future Windows users.' -ScriptPath 'Hide-ShutdownOptions.ps1' -Impact 'Changes machine and per-user registry policy, including offline and Default user registry hives.' -RequiresAdmin $true -Accent '#C084FC' -SuccessMessage 'Power commands are hidden for existing profiles and the Default user profile.'
@@ -692,6 +695,7 @@ function Show-ScriptInfo {
         if ($Item.InputSecret) { $inputTraits += 'masked' }
         $requirements += "Input: $($Item.InputTitle) requested before launch ($($inputTraits -join ', '))"
     }
+    if (-not $Item.CanQueue) { $requirements += 'Batch queue: unavailable; run this action by itself' }
     $dialog.FindName('InfoRequirements').Text = ($requirements -join '  •  ')
     $code = Get-CatalogPreview -Item $Item
     $dialog.FindName('InfoCode').Text = $code
@@ -1079,18 +1083,19 @@ function New-Card {
     $selectBox.Add_Unchecked({
         Set-CatalogItemSelected -Id $Item.Id -Selected $false
     }.GetNewClosure())
-    $script:SelectionControls.Add($selectBox)
+    if ($Item.CanQueue) { $script:SelectionControls.Add($selectBox) }
     $badgeParts = @()
     if ($Item.RequiresAdmin) { $badgeParts += 'ADMIN' }
     if ($Item.NeedsBypass) { $badgeParts += 'BYPASS' }
     if ($Item.InputSecret) { $badgeParts += 'SECRET INPUT' } elseif ($Item.InputVariable) { $badgeParts += 'INPUT' }
+    if (-not $Item.CanQueue) { $badgeParts += 'RUN ALONE' }
     if (-not $badgeParts) { $badgeParts += 'STANDARD' }
     $badge = New-Object Windows.Controls.TextBlock
     $badge.Text = ($badgeParts -join '  •  ')
     $badge.FontSize = 9
     $badge.FontWeight = 'Bold'
     $badge.Foreground = if ($Item.RequiresAdmin) { '#FDE68A' } else { '#86EFAC' }
-    $badges.Children.Add($selectBox) | Out-Null
+    if ($Item.CanQueue) { $badges.Children.Add($selectBox) | Out-Null }
     $badges.Children.Add($badge) | Out-Null
     [Windows.Controls.Grid]::SetColumn($badges, 0)
 
@@ -1385,8 +1390,14 @@ Add-TerminalLine 'Temporary runtime data will be removed when this window closes
 $script:OutputTimer.Start()
 
 if ($env:SCRIPTBOX_TEST_MODE -eq '1') {
-    if ($script:Catalog.Count -ne 23 -or @($script:Catalog | Where-Object InlineScript).Count -ne 0) {
+    if ($script:Catalog.Count -ne 24 -or @($script:Catalog | Where-Object InlineScript).Count -ne 0) {
         throw 'Lazy catalog validation failed.'
+    }
+    $cautionItems = @($script:Catalog | Where-Object Category -eq 'Warning - Use With Caution')
+    $eraseItem = @($script:Catalog | Where-Object Id -eq 'erase-reinstall-windows')
+    if ($cautionItems.Count -ne 2 -or @($cautionItems | Where-Object Id -eq 'shutdown-windows').Count -ne 1 -or
+        $eraseItem.Count -ne 1 -or $eraseItem[0].CanQueue -or $eraseItem[0].InputVariable -ne 'EraseConfirmation') {
+        throw 'Warning category and destructive-action safeguards validation failed.'
     }
     foreach ($catalogItem in @($script:Catalog | Where-Object ScriptPath)) {
         $catalogPath = Join-Path $PSScriptRoot (Join-Path 'scripts' $catalogItem.ScriptPath)
