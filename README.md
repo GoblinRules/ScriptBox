@@ -58,12 +58,15 @@ New-CatalogItem `
     -SuccessMessage 'Explains success in plain language.' `
     -ConflictGroup '' `
     -CanQueue $true `
+    -ShowInAllScripts $true `
     -Accent '#22D3EE'
 ```
 
 Categories and counts are generated automatically. `ScriptPath` resolves under the repository `scripts` folder and is fetched only when that card runs. `SourceUri` can instead point at an external HTTPS PowerShell launcher. Set the input fields when a script needs one value before launch; secret input is masked and never written to ScriptBox output. Give mutually exclusive cards the same `ConflictGroup`. Delete a metadata entry and its standalone file to remove a script.
 
 Set `CanQueue` to `$false` for an action that must only be run by itself. Its card will not offer the **SELECT** control.
+
+Set `ShowInAllScripts` to `$false` for an action that should appear only inside its named section. Warning actions use this setting so they do not appear in **All scripts** or its search results.
 
 ## Design and safety notes
 

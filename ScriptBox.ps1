@@ -11,7 +11,7 @@ Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 
 $script:AppName = 'ScriptBox'
-$script:Version = '2.1.4'
+$script:Version = '2.1.5'
 $script:Repository = 'https://github.com/GoblinRules/ScriptBox'
 $script:SelfSource = 'https://raw.githubusercontent.com/GoblinRules/ScriptBox/main/ScriptBox.ps1'
 $script:IconSource = 'https://raw.githubusercontent.com/GoblinRules/ScriptBox/main/assets/icon.png'
@@ -97,6 +97,7 @@ function New-CatalogItem {
         [string]$SuccessMessage = 'The requested task completed successfully.',
         [string]$ConflictGroup = '',
         [bool]$CanQueue = $true,
+        [bool]$ShowInAllScripts = $true,
         [int]$RunOrder = 100,
         [string]$Accent = '#22D3EE'
     )
@@ -138,6 +139,7 @@ function New-CatalogItem {
         SuccessMessage       = $SuccessMessage
         ConflictGroup        = $ConflictGroup
         CanQueue             = $CanQueue
+        ShowInAllScripts     = $ShowInAllScripts
         RunOrder             = $RunOrder
         Accent               = $Accent
     }
@@ -150,8 +152,8 @@ function New-CatalogItem {
 # ============================================================================
 $script:Catalog = @(
     New-CatalogItem -Id 'restart-windows' -Name 'Restart Windows' -Category 'Power' -Description 'Restarts this computer after a 10-second warning.' -ScriptPath 'Restart-Windows.ps1' -Impact 'Open work may be lost. Windows displays a 10-second countdown before restarting.' -ConflictGroup 'power-action' -RunOrder 900 -Accent '#F472B6' -SuccessMessage 'Windows accepted the restart request and started the 10-second countdown.'
-    New-CatalogItem -Id 'shutdown-windows' -Name 'Shut Down Windows' -Category 'Warning - Use With Caution' -Description 'Shuts down this computer after a 30-second warning.' -ScriptPath 'Shutdown-Windows.ps1' -Impact 'Open work may be lost. Windows displays a 30-second countdown before shutting down.' -ConflictGroup 'power-action' -RunOrder 900 -Accent '#A855F7' -SuccessMessage 'Windows accepted the shutdown request and started the 30-second countdown.'
-    New-CatalogItem -Id 'erase-reinstall-windows' -Name 'Erase and Reinstall Windows' -Category 'Warning - Use With Caution' -Description 'Starts the guided Reset this PC workflow for a fresh Windows installation with no personal files retained.' -ScriptPath 'Reset-WindowsRemoveEverything.ps1' -ScriptArguments '-Confirmation $EraseConfirmation' -Impact 'PERMANENT DATA LOSS: removes every user profile, personal file, application, and setting from the Windows drive when Remove everything and Clean data are confirmed in Windows Recovery. Other drives are erased only if explicitly selected in the reset wizard. This cannot be undone.' -RequiresAdmin $true -InputTitle 'Type ERASE THIS PC to continue' -InputMessage 'This action is irreversible. Back up anything required and have the BitLocker recovery key available. Type ERASE THIS PC exactly to open the full-reset workflow.' -InputVariable 'EraseConfirmation' -ConflictGroup 'power-action' -CanQueue $false -ResultMode 'Terminal' -RunOrder 999 -Accent '#EF4444' -SuccessMessage 'Windows Recovery was opened. Complete the displayed Remove everything, Cloud download, and Clean data choices to erase and reinstall Windows.'
+    New-CatalogItem -Id 'shutdown-windows' -Name 'Shut Down Windows' -Category 'Warning - Use With Caution' -Description 'Shuts down this computer after a 30-second warning.' -ScriptPath 'Shutdown-Windows.ps1' -Impact 'Open work may be lost. Windows displays a 30-second countdown before shutting down.' -ConflictGroup 'power-action' -ShowInAllScripts $false -RunOrder 900 -Accent '#A855F7' -SuccessMessage 'Windows accepted the shutdown request and started the 30-second countdown.'
+    New-CatalogItem -Id 'erase-reinstall-windows' -Name 'Erase and Reinstall Windows' -Category 'Warning - Use With Caution' -Description 'Starts the guided Reset this PC workflow for a fresh Windows installation with no personal files retained.' -ScriptPath 'Reset-WindowsRemoveEverything.ps1' -ScriptArguments '-Confirmation $EraseConfirmation' -Impact 'PERMANENT DATA LOSS: removes every user profile, personal file, application, and setting from the Windows drive when Remove everything and Clean data are confirmed in Windows Recovery. Other drives are erased only if explicitly selected in the reset wizard. This cannot be undone.' -RequiresAdmin $true -InputTitle 'Type ERASE THIS PC to continue' -InputMessage 'This action is irreversible. Back up anything required and have the BitLocker recovery key available. Type ERASE THIS PC exactly to open the full-reset workflow.' -InputVariable 'EraseConfirmation' -ConflictGroup 'power-action' -CanQueue $false -ShowInAllScripts $false -ResultMode 'Terminal' -RunOrder 999 -Accent '#EF4444' -SuccessMessage 'Windows Recovery was opened. Complete the displayed Remove everything, Cloud download, and Clean data choices to erase and reinstall Windows.'
     New-CatalogItem -Id 'always-on-power' -Name 'Keep PC Awake' -Category 'Power' -Description 'Keeps the display, computer, and laptop active for reliable remote access.' -ScriptPath 'Configure-AlwaysOnPower.ps1' -Impact 'Changes the active power plan, disables sleep and hibernation, and makes lid-close and power-button actions do nothing.' -RequiresAdmin $true -Accent '#22D3EE' -SuccessMessage 'The active power plan now keeps the computer awake on AC and battery.'
     New-CatalogItem -Id 'keep-network-active' -Name 'Keep Network Active' -Category 'Power' -Description 'Reduces adapter and power-plan sleep behavior so networking remains available while locked.' -ScriptPath 'Keep-NetworkActive.ps1' -Impact 'Disables several network, PCIe, and USB power-saving features and writes a log under C:\Tools\Logs.' -RequiresAdmin $true -Accent '#2DD4BF' -SuccessMessage 'Supported network power-saving settings were disabled to improve locked-session connectivity.'
     New-CatalogItem -Id 'hide-shutdown-options' -Name 'Hide Shutdown Options' -Category 'Security' -Description 'Hides Shutdown, Restart, Sleep, and Hibernate for existing and future Windows users.' -ScriptPath 'Hide-ShutdownOptions.ps1' -Impact 'Changes machine and per-user registry policy, including offline and Default user registry hives.' -RequiresAdmin $true -Accent '#C084FC' -SuccessMessage 'Power commands are hidden for existing profiles and the Default user profile.'
@@ -1142,7 +1144,7 @@ function Render-Cards {
     $script:SelectionControls.Clear()
     $query = $script:SearchBox.Text.Trim()
     $filtered = @($script:Catalog | Where-Object {
-        ($script:ActiveCategory -eq 'All scripts' -or $_.Category -eq $script:ActiveCategory) -and
+        (($script:ActiveCategory -eq 'All scripts' -and $_.ShowInAllScripts) -or $_.Category -eq $script:ActiveCategory) -and
         ([string]::IsNullOrWhiteSpace($query) -or
          $_.Name.IndexOf($query, [StringComparison]::OrdinalIgnoreCase) -ge 0 -or
          $_.Description.IndexOf($query, [StringComparison]::OrdinalIgnoreCase) -ge 0 -or
@@ -1258,7 +1260,7 @@ function Select-Category {
 $categories = @('All scripts') + @($script:Catalog.Category | Sort-Object -Unique)
 foreach ($categoryName in $categories) {
     $button = New-Object Windows.Controls.Button
-    $count = if ($categoryName -eq 'All scripts') { $script:Catalog.Count } else { @($script:Catalog | Where-Object Category -eq $categoryName).Count }
+    $count = if ($categoryName -eq 'All scripts') { @($script:Catalog | Where-Object ShowInAllScripts).Count } else { @($script:Catalog | Where-Object Category -eq $categoryName).Count }
     $button.Content = "$categoryName   $count"
     $button.Tag = $categoryName
     $button.HorizontalContentAlignment = 'Left'
@@ -1395,9 +1397,14 @@ if ($env:SCRIPTBOX_TEST_MODE -eq '1') {
     }
     $cautionItems = @($script:Catalog | Where-Object Category -eq 'Warning - Use With Caution')
     $eraseItem = @($script:Catalog | Where-Object Id -eq 'erase-reinstall-windows')
-    if ($cautionItems.Count -ne 2 -or @($cautionItems | Where-Object Id -eq 'shutdown-windows').Count -ne 1 -or
+    if ($cautionItems.Count -ne 2 -or @($cautionItems | Where-Object ShowInAllScripts).Count -ne 0 -or
+        @($cautionItems | Where-Object Id -eq 'shutdown-windows').Count -ne 1 -or
         $eraseItem.Count -ne 1 -or $eraseItem[0].CanQueue -or $eraseItem[0].InputVariable -ne 'EraseConfirmation') {
         throw 'Warning category and destructive-action safeguards validation failed.'
+    }
+    $allScriptsButton = @($script:CategoryHost.Children | Where-Object Tag -eq 'All scripts')[0]
+    if ($script:CardsHost.Children.Count -ne 22 -or $allScriptsButton.Content -ne 'All scripts   22') {
+        throw 'All scripts must exclude warning-only actions.'
     }
     foreach ($catalogItem in @($script:Catalog | Where-Object ScriptPath)) {
         $catalogPath = Join-Path $PSScriptRoot (Join-Path 'scripts' $catalogItem.ScriptPath)
