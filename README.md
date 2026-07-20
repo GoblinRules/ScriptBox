@@ -19,7 +19,7 @@ ScriptBox does not install itself. The initial launcher fetches only the UI/cata
 ## Included sections
 
 - **Power** — restart, always-on power, and locked-session network availability.
-- **Warning - Use With Caution** — shut down Windows or start a guarded erase-and-reinstall workflow.
+- **Warning - Use With Caution** — shut down Windows or schedule an unattended protected erase-and-reinstall workflow.
 - **Security** — hide power commands, enforce a ten-minute idle lock, and allow password sign-in without removing Windows Hello PINs.
 - **Windows** — location services, supported IPv6 component policy, and persistent machine-wide audio suppression.
 - **Remote Access** — enable RDP, NLA, firewall access, and the signed-in user.
@@ -75,7 +75,7 @@ Set `ShowInAllScripts` to `$false` for an action that should appear only inside 
 - Script output is streamed from a temporary UTF-8 log and removed after completion or app shutdown.
 - Multi-selection runs sequentially, avoiding simultaneous registry, policy, installer, and firmware changes.
 - Restart and shutdown can be cancelled during their countdown with `shutdown /a`.
-- **Erase and Reinstall Windows** requires the exact phrase `ERASE THIS PC`, administrator approval, and final confirmation in Windows Recovery. Choose **Remove everything**, **Cloud download**, and enable **Clean data** to avoid retaining files on the Windows drive. If BitLocker is enabled, have the recovery key available. Erasing additional drives remains an explicit choice in the reset wizard.
+- **Unattended Erase and Reinstall** requires the exact phrase `ERASE ALL INTERNAL DATA` and administrator approval. It validates Microsoft RemoteWipe as Local System, then schedules `doWipeProtectedMethod` after a 60-second cancellation window. The protected wipe cleans the entire internal Windows disk, including a `D:` partition on that disk, and reinstalls Windows without additional reset prompts. Microsoft warns that some device configurations may become unbootable if recovery fails. Keep the device on AC power and have its BitLocker recovery key available. Windows stops at first-run setup afterward unless the device has an Autopilot/MDM provisioning path.
 - Remote launchers can change independently. Their entries are marked clearly and require confirmation.
 - The KVM diagnostics make no network, firewall, Tailscale, or router changes. By default, each saves a timestamped text report to the current user's Downloads folder.
 - Do not add passwords, tokens, private URLs, or other secrets to this public repository.
