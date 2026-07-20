@@ -78,6 +78,11 @@ if ($resetSource -match '-StartWhenAvailable') {
     throw 'A missed protected-wipe trigger must not be allowed to run later.'
 }
 
+$launcherSource = Get-Content -Raw -LiteralPath $launcherPath
+if ($launcherSource -notmatch "-RequiredInputValue 'ERASE ALL INTERNAL DATA'") {
+    throw 'The erase workflow must validate its exact confirmation phrase inside the launcher.'
+}
+
 $methodCollectionType = [Microsoft.Management.Infrastructure.CimClass].GetProperty('CimClassMethods').PropertyType
 if (-not [Collections.IEnumerable].IsAssignableFrom($methodCollectionType)) {
     throw 'CimClassMethods is not enumerable on this Windows PowerShell runtime.'

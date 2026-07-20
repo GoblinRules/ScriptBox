@@ -11,7 +11,7 @@ Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 
 $script:AppName = 'ScriptBox'
-$script:Version = '2.1.10'
+$script:Version = '2.1.11'
 $script:Repository = 'https://github.com/GoblinRules/ScriptBox'
 $script:SelfSource = 'https://raw.githubusercontent.com/GoblinRules/ScriptBox/main/ScriptBox.ps1'
 $script:IconSource = 'https://raw.githubusercontent.com/GoblinRules/ScriptBox/main/assets/icon.png'
@@ -93,6 +93,7 @@ function New-CatalogItem {
         [string]$InputVariable = '',
         [bool]$InputOptional = $false,
         [bool]$InputSecret = $false,
+        [string]$RequiredInputValue = '',
         [ValidateSet('Summary', 'Terminal', 'None')][string]$ResultMode = 'Summary',
         [string]$SuccessMessage = 'The requested task completed successfully.',
         [string]$ConflictGroup = '',
@@ -104,6 +105,9 @@ function New-CatalogItem {
 
     if ($InputVariable -and $InputVariable -notmatch '^[A-Za-z_][A-Za-z0-9_]*$') {
         throw "Catalog input variable '$InputVariable' is not a valid PowerShell variable name."
+    }
+    if ($RequiredInputValue -and (-not $InputVariable -or $InputOptional -or $InputSecret)) {
+        throw "Catalog item '$Id' can require an exact input only for a required, non-secret input variable."
     }
     $sourceCount = 0
     if (-not [string]::IsNullOrWhiteSpace($ScriptPath)) { $sourceCount++ }
@@ -135,6 +139,7 @@ function New-CatalogItem {
         InputVariable        = $InputVariable
         InputOptional        = $InputOptional
         InputSecret          = $InputSecret
+        RequiredInputValue   = $RequiredInputValue
         ResultMode           = $ResultMode
         SuccessMessage       = $SuccessMessage
         ConflictGroup        = $ConflictGroup
@@ -153,7 +158,7 @@ function New-CatalogItem {
 $script:Catalog = @(
     New-CatalogItem -Id 'restart-windows' -Name 'Restart Windows' -Category 'Power' -Description 'Restarts this computer after a 10-second warning.' -ScriptPath 'Restart-Windows.ps1' -Impact 'Open work may be lost. Windows displays a 10-second countdown before restarting.' -ConflictGroup 'power-action' -RunOrder 900 -Accent '#F472B6' -SuccessMessage 'Windows accepted the restart request and started the 10-second countdown.'
     New-CatalogItem -Id 'shutdown-windows' -Name 'Shut Down Windows' -Category 'Warning - Use With Caution' -Description 'Shuts down this computer after a 30-second warning.' -ScriptPath 'Shutdown-Windows.ps1' -Impact 'Open work may be lost. Windows displays a 30-second countdown before shutting down.' -ConflictGroup 'power-action' -ShowInAllScripts $false -RunOrder 900 -Accent '#A855F7' -SuccessMessage 'Windows accepted the shutdown request and started the 30-second countdown.'
-    New-CatalogItem -Id 'erase-reinstall-windows' -Name 'Unattended Erase and Reinstall' -Category 'Warning - Use With Caution' -Description 'Fully cleans the internal Windows disk and reinstalls Windows without further reset prompts.' -ScriptPath 'Reset-WindowsRemoveEverything.ps1' -ScriptArguments '-Confirmation $EraseConfirmation' -Impact 'PERMANENT DATA LOSS: after a 60-second cancellation window, Microsoft protected wipe removes every user profile, application, setting, and partition from the internal Windows disk, including a D: partition on that same disk. Microsoft warns that some device configurations may become unbootable if recovery fails. This cannot be undone.' -RequiresAdmin $true -InputTitle 'Type ERASE ALL INTERNAL DATA' -InputMessage 'This unattended action is irreversible. Back up anything required, connect AC power, and have the BitLocker recovery key available. Type ERASE ALL INTERNAL DATA exactly to schedule the protected wipe of C: and any D: partition on the same disk.' -InputVariable 'EraseConfirmation' -ConflictGroup 'power-action' -CanQueue $false -ShowInAllScripts $false -ResultMode 'Terminal' -RunOrder 999 -Accent '#EF4444' -SuccessMessage 'The unattended protected wipe was scheduled with a 60-second cancellation window.'
+    New-CatalogItem -Id 'erase-reinstall-windows' -Name 'Unattended Erase and Reinstall' -Category 'Warning - Use With Caution' -Description 'Fully cleans the internal Windows disk and reinstalls Windows without further reset prompts.' -ScriptPath 'Reset-WindowsRemoveEverything.ps1' -ScriptArguments '-Confirmation $EraseConfirmation' -Impact 'PERMANENT DATA LOSS: after a 60-second cancellation window, Microsoft protected wipe removes every user profile, application, setting, and partition from the internal Windows disk, including a D: partition on that same disk. Microsoft warns that some device configurations may become unbootable if recovery fails. This cannot be undone.' -RequiresAdmin $true -InputTitle 'Type ERASE ALL INTERNAL DATA' -InputMessage 'This unattended action is irreversible. Back up anything required, connect AC power, and have the BitLocker recovery key available. Type ERASE ALL INTERNAL DATA exactly to schedule the protected wipe of C: and any D: partition on the same disk.' -InputVariable 'EraseConfirmation' -RequiredInputValue 'ERASE ALL INTERNAL DATA' -ConflictGroup 'power-action' -CanQueue $false -ShowInAllScripts $false -ResultMode 'Terminal' -RunOrder 999 -Accent '#EF4444' -SuccessMessage 'The unattended protected wipe was scheduled with a 60-second cancellation window.'
     New-CatalogItem -Id 'always-on-power' -Name 'Keep PC Awake' -Category 'Power' -Description 'Keeps the display, computer, and laptop active for reliable remote access.' -ScriptPath 'Configure-AlwaysOnPower.ps1' -Impact 'Changes the active power plan, disables sleep and hibernation, and makes lid-close and power-button actions do nothing.' -RequiresAdmin $true -Accent '#22D3EE' -SuccessMessage 'The active power plan now keeps the computer awake on AC and battery.'
     New-CatalogItem -Id 'keep-network-active' -Name 'Keep Network Active' -Category 'Power' -Description 'Reduces adapter and power-plan sleep behavior so networking remains available while locked.' -ScriptPath 'Keep-NetworkActive.ps1' -Impact 'Disables several network, PCIe, and USB power-saving features and writes a log under C:\Tools\Logs.' -RequiresAdmin $true -Accent '#2DD4BF' -SuccessMessage 'Supported network power-saving settings were disabled to improve locked-session connectivity.'
     New-CatalogItem -Id 'hide-shutdown-options' -Name 'Hide Shutdown Options' -Category 'Security' -Description 'Hides Shutdown, Restart, Sleep, and Hibernate for existing and future Windows users.' -ScriptPath 'Hide-ShutdownOptions.ps1' -Impact 'Changes machine and per-user registry policy, including offline and Default user registry hives.' -RequiresAdmin $true -Accent '#C084FC' -SuccessMessage 'Power commands are hidden for existing profiles and the Default user profile.'
@@ -487,7 +492,8 @@ function Show-ScriptBoxInputDialog {
         [Parameter(Mandatory)][string]$Message,
         [string]$InitialValue = '',
         [bool]$Optional = $false,
-        [bool]$Secret = $false
+        [bool]$Secret = $false,
+        [string]$RequiredValue = ''
     )
 
     $inputXaml = @'
@@ -558,22 +564,33 @@ function Show-ScriptBoxInputDialog {
     $popup.FindName('InputMessage').Text = $Message
     $inputBox = $popup.FindName('InputValue')
     $secretBox = $popup.FindName('SecretInputValue')
+    $inputHint = $popup.FindName('InputHint')
     $inputBox.Text = $InitialValue
     if ($Secret) {
         $inputBox.Visibility = 'Collapsed'
         $secretBox.Visibility = 'Visible'
         $secretBox.Password = $InitialValue
-        $popup.FindName('InputHint').Text = 'The password is masked, passed only to this run, and is not written to the log.'
+        $inputHint.Text = 'The password is masked, passed only to this run, and is not written to the log.'
     } elseif ($Optional) {
-        $popup.FindName('InputHint').Text = 'Optional: leave this blank to continue without a value.'
+        $inputHint.Text = 'Optional: leave this blank to continue without a value.'
+    } elseif ($RequiredValue) {
+        $inputHint.Text = 'The text must match exactly before CONTINUE is accepted.'
     }
     $result = [pscustomobject]@{ Confirmed = $false; Value = '' }
 
     $accept = {
         $value = if ($Secret) { $secretBox.Password } else { $inputBox.Text }
         if (-not $Optional -and [string]::IsNullOrWhiteSpace($value)) { return }
+        $normalizedValue = if ($null -eq $value) { '' } elseif ($Secret) { [string]$value } else { $value.Trim() }
+        if ($RequiredValue -and -not [string]::Equals($normalizedValue, $RequiredValue, [StringComparison]::Ordinal)) {
+            $inputHint.Text = "Enter $RequiredValue exactly; capitalization and internal spaces must match."
+            $inputHint.Foreground = '#F472B6'
+            $inputBox.Focus() | Out-Null
+            $inputBox.SelectAll()
+            return
+        }
         $result.Confirmed = $true
-        $result.Value = if ($null -eq $value) { '' } elseif ($Secret) { [string]$value } else { $value.Trim() }
+        $result.Value = $normalizedValue
         $popup.Close()
     }.GetNewClosure()
     $popup.FindName('InputRunButton').Add_Click($accept)
@@ -898,13 +915,18 @@ function Start-CatalogItem {
     $inputPrelude = ''
     if ($Item.InputVariable) {
         $inputResult = Show-ScriptBoxInputDialog -Title $Item.InputTitle -Message $Item.InputMessage `
-            -Optional $Item.InputOptional -Secret $Item.InputSecret
+            -Optional $Item.InputOptional -Secret $Item.InputSecret -RequiredValue $Item.RequiredInputValue
         if (-not $inputResult.Confirmed) {
             Add-TerminalLine "Cancelled: $($Item.Name)"
             if ($FromQueue) {
                 $script:QueueResults.Add((New-FriendlyResult -Item $Item -ExitCode 1 -Output '[WARNING] Cancelled by the user before launch.')) | Out-Null
                 Start-NextQueuedItem
             }
+            return
+        }
+        if ($Item.RequiredInputValue -and
+            -not [string]::Equals($inputResult.Value, $Item.RequiredInputValue, [StringComparison]::Ordinal)) {
+            Add-TerminalLine "Input did not match the exact required value for $($Item.Name); nothing was launched."
             return
         }
         $safeInputValue = $inputResult.Value.Replace("'", "''")
@@ -1399,7 +1421,8 @@ if ($env:SCRIPTBOX_TEST_MODE -eq '1') {
     $eraseItem = @($script:Catalog | Where-Object Id -eq 'erase-reinstall-windows')
     if ($cautionItems.Count -ne 2 -or @($cautionItems | Where-Object ShowInAllScripts).Count -ne 0 -or
         @($cautionItems | Where-Object Id -eq 'shutdown-windows').Count -ne 1 -or
-        $eraseItem.Count -ne 1 -or $eraseItem[0].CanQueue -or $eraseItem[0].InputVariable -ne 'EraseConfirmation') {
+        $eraseItem.Count -ne 1 -or $eraseItem[0].CanQueue -or $eraseItem[0].InputVariable -ne 'EraseConfirmation' -or
+        $eraseItem[0].RequiredInputValue -cne 'ERASE ALL INTERNAL DATA') {
         throw 'Warning category and destructive-action safeguards validation failed.'
     }
     $allScriptsButton = @($script:CategoryHost.Children | Where-Object Tag -eq 'All scripts')[0]
