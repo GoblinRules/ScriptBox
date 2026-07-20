@@ -1,0 +1,103 @@
+name: Publish version tag
+
+on:
+  pull_request:
+    paths:
+      - ScriptBox.ps1
+      - scripts/**
+      - assets/**
+  push:
+    branches:
+      - main
+    paths:
+      - ScriptBox.ps1
+      - scripts/**
+      - assets/**
+
+jobs:
+  validate-version:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Check out repository history
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Require a new version for runtime changes
+        shell: pwsh
+        env:
+          BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          function Get-LauncherVersion([string]$Text) {
+              $match = [regex]::Match($Text, "(?m)^\`$script:Version\s*=\s*'(?<version>\d+\.\d+\.\d+)'\s*$")
+              if (-not $match.Success) {
+                  throw 'ScriptBox.ps1 must declare $script:Version as a semantic version.'
+              }
+              $match.Groups['version'].Value
+          }
+
+          $version = Get-LauncherVersion (Get-Content -Raw -LiteralPath './ScriptBox.ps1')
+          $baseLauncher = git show "$($env:BASE_SHA):ScriptBox.ps1"
+          if ($LASTEXITCODE -ne 0) {
+              throw "Could not read ScriptBox.ps1 from base commit $($env:BASE_SHA)."
+          }
+          $baseVersion = Get-LauncherVersion ($baseLauncher -join "`n")
+
+          if ($version -eq $baseVersion) {
+              throw "Runtime files changed without incrementing `$script:Version from $baseVersion."
+          }
+
+          $tag = "v$version"
+          $existingCommit = git rev-parse --verify "refs/tags/$tag^{}" 2>$null
+          if ($LASTEXITCODE -eq 0 -and $env:GITHUB_EVENT_NAME -eq 'pull_request') {
+              throw "Tag $tag already exists at $existingCommit. Choose a new version."
+          }
+          if ($LASTEXITCODE -eq 0 -and $env:GITHUB_EVENT_NAME -eq 'push' -and $existingCommit -ne $env:GITHUB_SHA) {
+              throw "Tag $tag already points to $existingCommit and will not be moved."
+          }
+
+          "Validated ScriptBox version $version."
+
+  publish-tag:
+    if: github.event_name == 'push'
+    needs: validate-version
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Check out repository history
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Create immutable version tag
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $launcher = Get-Content -Raw -LiteralPath './ScriptBox.ps1'
+          $match = [regex]::Match($launcher, "(?m)^\`$script:Version\s*=\s*'(?<version>\d+\.\d+\.\d+)'\s*$")
+          if (-not $match.Success) {
+              throw 'ScriptBox.ps1 must declare $script:Version as a semantic version.'
+          }
+
+          $version = $match.Groups['version'].Value
+          $tag = "v$version"
+          $existingCommit = git rev-parse --verify "refs/tags/$tag^{}" 2>$null
+          if ($LASTEXITCODE -eq 0) {
+              if ($existingCommit -ne $env:GITHUB_SHA) {
+                  throw "Tag $tag already points to $existingCommit and will not be moved."
+              }
+              "$tag already points to the current commit."
+              exit 0
+          }
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git tag -a $tag $env:GITHUB_SHA -m "ScriptBox $version"
+          if ($LASTEXITCODE -ne 0) { throw "Could not create $tag." }
+          git push origin "refs/tags/$tag"
+          if ($LASTEXITCODE -ne 0) { throw "Could not publish $tag." }
