@@ -16,9 +16,15 @@ if ($Confirmation -cne 'ERASE ALL INTERNAL DATA') {
 
 $probePayload = @'
 $ErrorActionPreference = 'Stop'
-$class = Get-CimClass -Namespace 'root\cimv2\mdm\dmmap' -ClassName 'MDM_RemoteWipe'
-if (-not $class.CimClassMethods.ContainsKey('doWipeProtectedMethod')) { exit 12 }
-exit 0
+try {
+    $instance = Get-CimInstance -Namespace 'root\cimv2\mdm\dmmap' -ClassName 'MDM_RemoteWipe' `
+        -Filter "ParentID='./Vendor/MSFT' and InstanceID='RemoteWipe'" -OperationTimeoutSec 45
+    if ($null -eq $instance) { exit 13 }
+    if (-not $instance.CimClass.CimClassMethods.ContainsKey('doWipeProtectedMethod')) { exit 12 }
+    exit 0
+}
+catch [Microsoft.Management.Infrastructure.CimException] { exit 14 }
+catch { exit 15 }
 '@
 
 $wipePayload = @'
@@ -52,6 +58,11 @@ if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administra
 $editionId = [string](Get-ItemProperty -LiteralPath 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion' -Name EditionID).EditionID
 if ($editionId -match '^(Core|Home|Starter)') {
     throw "Windows edition '$editionId' does not support Microsoft RemoteWipe; no wipe was scheduled."
+}
+
+$productType = [string](Get-ItemProperty -LiteralPath 'HKLM:\SYSTEM\CurrentControlSet\Control\ProductOptions' -Name ProductType).ProductType
+if ($productType -ne 'WinNT') {
+    throw "Microsoft RemoteWipe is not supported on Windows Server (product type '$productType'); no wipe was scheduled."
 }
 
 $reagentPath = Join-Path $env:SystemRoot 'System32\reagentc.exe'
@@ -93,7 +104,7 @@ try {
         -Principal $probeParts.Principal -Settings $probeParts.Settings -Force | Out-Null
     $probeStarted = Get-Date
     Start-ScheduledTask -TaskName $probeTaskName
-    $probeDeadline = $probeStarted.AddSeconds(30)
+    $probeDeadline = $probeStarted.AddSeconds(75)
     do {
         Start-Sleep -Milliseconds 250
         $probeTask = Get-ScheduledTask -TaskName $probeTaskName
@@ -101,12 +112,31 @@ try {
         $probeFinished = $probeInfo.LastRunTime -ge $probeStarted.AddSeconds(-1) -and $probeTask.State -ne 'Running'
     } while (-not $probeFinished -and (Get-Date) -lt $probeDeadline)
 
-    if (-not $probeFinished) { throw 'The Local System compatibility test timed out.' }
-    if ([int]$probeInfo.LastTaskResult -ne 0) {
-        throw "Microsoft protected wipe is unavailable (compatibility result $($probeInfo.LastTaskResult))."
+    if (-not $probeFinished) {
+        $probeState = [string]$probeTask.State
+        $probeResult = [int64]$probeInfo.LastTaskResult
+        $probeResultHex = [uint32]($probeResult -band 0xFFFFFFFFL)
+        if ($probeTask.State -eq 'Running') {
+            Stop-ScheduledTask -TaskName $probeTaskName -ErrorAction SilentlyContinue
+        }
+        throw ('The Local System compatibility test timed out after 75 seconds ' +
+            "(task state $probeState, last result 0x$($probeResultHex.ToString('X8'))). No wipe was scheduled.")
+    }
+
+    $probeResult = [int64]$probeInfo.LastTaskResult
+    if ($probeResult -ne 0) {
+        $probeFailure = switch ($probeResult) {
+            12 { 'the doWipeProtectedMethod method is missing' }
+            13 { 'the RemoteWipe instance is unavailable' }
+            14 { 'the MDM Bridge provider rejected or timed out the CIM request' }
+            15 { 'the Local System probe failed unexpectedly' }
+            default { "the probe process returned exit code $probeResult" }
+        }
+        throw "Microsoft protected wipe is unavailable: $probeFailure. No wipe was scheduled."
     }
 }
 finally {
+    Stop-ScheduledTask -TaskName $probeTaskName -ErrorAction SilentlyContinue
     Unregister-ScheduledTask -TaskName $probeTaskName -Confirm:$false -ErrorAction SilentlyContinue
 }
 
