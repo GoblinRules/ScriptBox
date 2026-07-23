@@ -21,6 +21,7 @@ ScriptBox does not install itself. The initial launcher fetches only the UI/cata
 - **Power** — restart, always-on power, and locked-session network availability.
 - **Warning - Use With Caution** — shut down Windows or schedule an unattended protected erase-and-reinstall workflow.
 - **Security** — hide power commands, enforce a ten-minute idle lock, and allow password sign-in without removing Windows Hello PINs.
+- **Fixes** — repair Windows 11 power-menu and notification-area shell state left by legacy ScriptBox policy changes.
 - **Windows** — location services, supported IPv6 component policy, and persistent machine-wide audio suppression.
 - **Remote Access** — enable RDP, NLA, firewall access, and the signed-in user.
 - **Windows Update** — choose security-focused automatic updates or completely manual updates.

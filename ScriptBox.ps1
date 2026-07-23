@@ -11,7 +11,7 @@ Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 
 $script:AppName = 'ScriptBox'
-$script:Version = '2.1.11'
+$script:Version = '2.1.12'
 $script:Repository = 'https://github.com/GoblinRules/ScriptBox'
 $script:SelfSource = 'https://raw.githubusercontent.com/GoblinRules/ScriptBox/main/ScriptBox.ps1'
 $script:IconSource = 'https://raw.githubusercontent.com/GoblinRules/ScriptBox/main/assets/icon.png'
@@ -161,7 +161,8 @@ $script:Catalog = @(
     New-CatalogItem -Id 'erase-reinstall-windows' -Name 'Unattended Erase and Reinstall' -Category 'Warning - Use With Caution' -Description 'Fully cleans the internal Windows disk and reinstalls Windows without further reset prompts.' -ScriptPath 'Reset-WindowsRemoveEverything.ps1' -ScriptArguments '-Confirmation $EraseConfirmation' -Impact 'PERMANENT DATA LOSS: after a 60-second cancellation window, Microsoft protected wipe removes every user profile, application, setting, and partition from the internal Windows disk, including a D: partition on that same disk. Microsoft warns that some device configurations may become unbootable if recovery fails. This cannot be undone.' -RequiresAdmin $true -InputTitle 'Type ERASE ALL INTERNAL DATA' -InputMessage 'This unattended action is irreversible. Back up anything required, connect AC power, and have the BitLocker recovery key available. Type ERASE ALL INTERNAL DATA exactly to schedule the protected wipe of C: and any D: partition on the same disk.' -InputVariable 'EraseConfirmation' -RequiredInputValue 'ERASE ALL INTERNAL DATA' -ConflictGroup 'power-action' -CanQueue $false -ShowInAllScripts $false -ResultMode 'Terminal' -RunOrder 999 -Accent '#EF4444' -SuccessMessage 'The unattended protected wipe was scheduled with a 60-second cancellation window.'
     New-CatalogItem -Id 'always-on-power' -Name 'Keep PC Awake' -Category 'Power' -Description 'Keeps the display, computer, and laptop active for reliable remote access.' -ScriptPath 'Configure-AlwaysOnPower.ps1' -Impact 'Changes the active power plan, disables sleep and hibernation, and makes lid-close and power-button actions do nothing.' -RequiresAdmin $true -Accent '#22D3EE' -SuccessMessage 'The active power plan now keeps the computer awake on AC and battery.'
     New-CatalogItem -Id 'keep-network-active' -Name 'Keep Network Active' -Category 'Power' -Description 'Reduces adapter and power-plan sleep behavior so networking remains available while locked.' -ScriptPath 'Keep-NetworkActive.ps1' -Impact 'Disables several network, PCIe, and USB power-saving features and writes a log under C:\Tools\Logs.' -RequiresAdmin $true -Accent '#2DD4BF' -SuccessMessage 'Supported network power-saving settings were disabled to improve locked-session connectivity.'
-    New-CatalogItem -Id 'hide-shutdown-options' -Name 'Hide Shutdown Options' -Category 'Security' -Description 'Hides Shutdown, Restart, Sleep, and Hibernate for existing and future Windows users.' -ScriptPath 'Hide-ShutdownOptions.ps1' -Impact 'Changes machine and per-user registry policy, including offline and Default user registry hives.' -RequiresAdmin $true -Accent '#C084FC' -SuccessMessage 'Power commands are hidden for existing profiles and the Default user profile.'
+    New-CatalogItem -Id 'hide-shutdown-options' -Name 'Hide Shutdown Options' -Category 'Security' -Description 'Hides Shutdown, Restart, Sleep, and Hibernate for existing and future Windows users without changing notification-area policy.' -ScriptPath 'Hide-ShutdownOptions.ps1' -Impact 'Sets only the documented per-user NoClose policy, including offline and Default user registry hives. It does not alter Windows PolicyManager defaults or system-tray policy.' -RequiresAdmin $true -ConflictGroup 'power-menu-visibility' -Accent '#C084FC' -SuccessMessage 'Power commands are hidden for existing profiles and the Default user profile without changing notification-area policy.'
+    New-CatalogItem -Id 'repair-power-menu-system-tray' -Name 'Repair Power Menu and System Tray' -Category 'Fixes' -Description 'Reverses legacy ScriptBox policy changes that could disturb Windows 11 power and notification-area shell surfaces.' -ScriptPath 'Repair-PowerMenuAndSystemTray.ps1' -Impact 'Restores the four PolicyManager Start defaults changed by ScriptBox 2.1.11 and earlier, then removes ScriptBox''s NoClose value from existing and future-user profiles. A sign-out or restart is required.' -RequiresAdmin $true -ConflictGroup 'power-menu-visibility' -Accent '#34D399' -SuccessMessage 'Legacy ScriptBox power-policy changes were removed; sign out or restart Windows to reload the shell.'
     New-CatalogItem -Id 'idle-lock-10-minutes' -Name 'Lock After 10 Minutes' -Category 'Security' -Description 'Locks signed-in Windows sessions after ten minutes without keyboard or mouse activity.' -ScriptPath 'Configure-IdleLock.ps1' -Impact 'Sets computer and user inactivity policies and refreshes Group Policy. A sign-out or restart may be needed.' -RequiresAdmin $true -Accent '#F472B6' -SuccessMessage 'Windows is configured to lock idle sessions after ten minutes.'
     New-CatalogItem -Id 'allow-password-signin' -Name 'Allow Password Sign-in' -Category 'Security' -Description 'Allows Microsoft-account users to choose password sign-in while keeping their existing PIN.' -ScriptPath 'Allow-PasswordSignIn.ps1' -Impact 'Sets the machine-wide DevicePasswordLessBuildVersion registry value to 0. Existing Windows Hello PINs are not removed.' -RequiresAdmin $true -Accent '#C084FC' -SuccessMessage 'Password sign-in is permitted and existing Windows Hello PINs remain available.'
     New-CatalogItem -Id 'enable-location-services' -Name 'Enable Location Services' -Category 'Windows' -Description 'Removes common policy blocks and restores the Windows Geolocation Service.' -ScriptPath 'Enable-LocationServices.ps1' -Impact 'Changes machine policy values, configures lfsvc for demand start, starts it, and refreshes Group Policy.' -RequiresAdmin $true -Accent '#34D399' -SuccessMessage 'Location policy restrictions were removed and the Geolocation Service was restored.'
@@ -1414,7 +1415,7 @@ Add-TerminalLine 'Temporary runtime data will be removed when this window closes
 $script:OutputTimer.Start()
 
 if ($env:SCRIPTBOX_TEST_MODE -eq '1') {
-    if ($script:Catalog.Count -ne 24 -or @($script:Catalog | Where-Object InlineScript).Count -ne 0) {
+    if ($script:Catalog.Count -ne 25 -or @($script:Catalog | Where-Object InlineScript).Count -ne 0) {
         throw 'Lazy catalog validation failed.'
     }
     $cautionItems = @($script:Catalog | Where-Object Category -eq 'Warning - Use With Caution')
@@ -1426,8 +1427,14 @@ if ($env:SCRIPTBOX_TEST_MODE -eq '1') {
         throw 'Warning category and destructive-action safeguards validation failed.'
     }
     $allScriptsButton = @($script:CategoryHost.Children | Where-Object Tag -eq 'All scripts')[0]
-    if ($script:CardsHost.Children.Count -ne 22 -or $allScriptsButton.Content -ne 'All scripts   22') {
+    if ($script:CardsHost.Children.Count -ne 23 -or $allScriptsButton.Content -ne 'All scripts   23') {
         throw 'All scripts must exclude warning-only actions.'
+    }
+    $fixesItems = @($script:Catalog | Where-Object Category -eq 'Fixes')
+    $fixesButton = @($script:CategoryHost.Children | Where-Object Tag -eq 'Fixes')[0]
+    if ($fixesItems.Count -ne 1 -or $fixesItems[0].Id -ne 'repair-power-menu-system-tray' -or
+        $fixesButton.Content -ne 'Fixes   1') {
+        throw 'Fixes category validation failed.'
     }
     foreach ($catalogItem in @($script:Catalog | Where-Object ScriptPath)) {
         $catalogPath = Join-Path $PSScriptRoot (Join-Path 'scripts' $catalogItem.ScriptPath)
@@ -1478,7 +1485,8 @@ if ($env:SCRIPTBOX_TEST_MODE -eq '1') {
         throw 'Multi-select count validation failed.'
     }
     if (@($script:Catalog | Where-Object ConflictGroup -eq 'windows-update-mode').Count -ne 2 -or
-        @($script:Catalog | Where-Object ConflictGroup -eq 'bios-vendor').Count -ne 3) {
+        @($script:Catalog | Where-Object ConflictGroup -eq 'bios-vendor').Count -ne 3 -or
+        @($script:Catalog | Where-Object ConflictGroup -eq 'power-menu-visibility').Count -ne 2) {
         throw 'Conflict group validation failed.'
     }
     Clear-SelectedItems

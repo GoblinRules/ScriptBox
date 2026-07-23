@@ -5,8 +5,9 @@
 
 .DESCRIPTION
     Applies the user policy to all existing non-special Windows profiles and
-    the Default profile, then also sets the Windows PolicyManager Start-menu
-    values used by newer Windows builds.
+    the Default profile. This is the documented NoClose user policy; the
+    script does not modify Windows PolicyManager defaults or notification-area
+    policy.
 
     The script is safe to run repeatedly. A user may need to sign out and back
     in before every interface reflects the change.
@@ -95,17 +96,6 @@ function Set-NoClosePolicyInOfflineHive {
 
 try {
     Assert-Administrator
-
-    # Newer Windows Start-menu policy values.
-    foreach ($option in @('HideShutDown', 'HideSleep', 'HideHibernate', 'HideRestart')) {
-        $path = "HKLM:\SOFTWARE\Microsoft\PolicyManager\default\Start\$option"
-        if (-not (Test-Path -LiteralPath $path)) {
-            New-Item -Path $path -Force | Out-Null
-        }
-
-        New-ItemProperty -Path $path -Name 'value' -PropertyType DWord -Value 1 -Force | Out-Null
-        Write-Log INFO "$option enabled."
-    }
 
     # Apply the traditional NoClose user policy to every real local profile.
     $profiles = Get-CimInstance -ClassName Win32_UserProfile | Where-Object {

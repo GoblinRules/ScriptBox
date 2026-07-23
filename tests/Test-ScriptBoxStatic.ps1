@@ -9,6 +9,8 @@ $repositoryRoot = Split-Path -Parent $PSScriptRoot
 $launcherPath = Join-Path $repositoryRoot 'ScriptBox.ps1'
 $scriptsPath = Join-Path $repositoryRoot 'scripts'
 $resetPath = Join-Path $scriptsPath 'Reset-WindowsRemoveEverything.ps1'
+$hideShutdownPath = Join-Path $scriptsPath 'Hide-ShutdownOptions.ps1'
+$repairShellPath = Join-Path $scriptsPath 'Repair-PowerMenuAndSystemTray.ps1'
 $files = @($launcherPath) + @(Get-ChildItem -LiteralPath $scriptsPath -Filter '*.ps1' -File | Select-Object -ExpandProperty FullName)
 
 $parseFailures = New-Object System.Collections.Generic.List[string]
@@ -81,6 +83,20 @@ if ($resetSource -match '-StartWhenAvailable') {
 $launcherSource = Get-Content -Raw -LiteralPath $launcherPath
 if ($launcherSource -notmatch "-RequiredInputValue 'ERASE ALL INTERNAL DATA'") {
     throw 'The erase workflow must validate its exact confirmation phrase inside the launcher.'
+}
+
+$hideShutdownSource = Get-Content -Raw -LiteralPath $hideShutdownPath
+if ($hideShutdownSource -match 'PolicyManager\\default') {
+    throw 'Hide Shutdown Options must not modify the Windows PolicyManager default store.'
+}
+if ($hideShutdownSource -notmatch "Name 'NoClose'") {
+    throw 'Hide Shutdown Options must retain the documented NoClose user policy.'
+}
+
+$repairShellSource = Get-Content -Raw -LiteralPath $repairShellPath
+if ($repairShellSource -notmatch 'PolicyManager\\default' -or
+    $repairShellSource -notmatch "Remove-ItemProperty.+Name 'NoClose'") {
+    throw 'The Windows shell repair must reverse both legacy ScriptBox policy changes.'
 }
 
 $methodCollectionType = [Microsoft.Management.Infrastructure.CimClass].GetProperty('CimClassMethods').PropertyType
