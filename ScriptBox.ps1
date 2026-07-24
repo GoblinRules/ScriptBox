@@ -11,7 +11,7 @@ Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 
 $script:AppName = 'ScriptBox'
-$script:Version = '2.1.12'
+$script:Version = '2.2.0'
 $script:Repository = 'https://github.com/GoblinRules/ScriptBox'
 $script:SelfSource = 'https://raw.githubusercontent.com/GoblinRules/ScriptBox/main/ScriptBox.ps1'
 $script:IconSource = 'https://raw.githubusercontent.com/GoblinRules/ScriptBox/main/assets/icon.png'
@@ -173,12 +173,15 @@ $script:Catalog = @(
     New-CatalogItem -Id 'windows-update-manual' -Name 'Manual Updates Only' -Category 'Windows Update' -Description 'Stops automatic update downloads and installations while keeping manual checking available.' -ScriptPath 'Configure-WindowsUpdateManual.ps1' -Impact 'Removes conflicting update policy and disables automatic Windows Update downloads and installation.' -RequiresAdmin $true -ConflictGroup 'windows-update-mode' -Accent '#F59E0B' -SuccessMessage 'Windows Update is now manual only; someone must regularly check and install security updates.'
     New-CatalogItem -Id 'install-ninite-apps' -Name 'Install Core Apps' -Category 'Software' -Description 'Installs or updates 7-Zip, Chrome, Firefox, and Notepad++ through Ninite.' -ScriptPath 'Install-NiniteApps.ps1' -Impact 'Downloads a signed Ninite executable, runs it unattended, installs or updates four applications, then removes the installer.' -RequiresAdmin $true -Accent '#34D399' -SuccessMessage '7-Zip, Chrome, Firefox, and Notepad++ were installed or updated.'
     New-CatalogItem -Id 'deploy-laptop-lid-check' -Name 'Deploy Laptop Lid Check' -Category 'Utilities' -Description 'Adds a Public Desktop shortcut that shows the current laptop-lid state in a friendly popup.' -ScriptPath 'Deploy-LaptopLidCheck.ps1' -Impact 'Creates C:\ProgramData\LaptopLidCheck and C:\Users\Public\Desktop\Folder.lnk for all users.' -RequiresAdmin $true -Accent '#C084FC' -SuccessMessage 'The matching Laptop Lid Check popup and Public Desktop shortcut were installed.'
+    New-CatalogItem -Id 'show-connected-usb-devices' -Name 'View Connected USB Devices' -Category 'Utilities' -Description 'Shows present USB Plug and Play devices, locations, and USB paths in a formatted table popup.' -ScriptPath 'Show-ConnectedUSBDevices.ps1' -Impact 'Performs a read-only PnP device query and opens a sortable popup. It makes no system changes.' -CanQueue $false -ResultMode 'None' -Accent '#22D3EE' -SuccessMessage 'The connected USB device table was displayed.'
     New-CatalogItem -Id 'launch-jetfuel' -Name 'Launch JetFuel' -Category 'Tools' -Description 'Downloads and runs the current JetFuel launcher.' -SourceUri 'https://tails.revhooks.cc' -Impact 'Executes remote PowerShell from tails.revhooks.cc. Review the source you trust before running it.' -RequiresAdmin $true -NeedsBypass $true -ResultMode 'None' -Accent '#22D3EE'
     New-CatalogItem -Id 'launch-invokex' -Name 'Launch InvokeX' -Category 'Tools' -Description 'Downloads and runs the current InvokeX installer from GitHub.' -SourceUri 'https://raw.githubusercontent.com/GoblinRules/InvokeX/main/install.ps1' -Impact 'Executes remote PowerShell from GoblinRules/InvokeX. The downloaded tool may create its own files.' -NeedsBypass $true -ResultMode 'None' -Accent '#C084FC'
     New-CatalogItem -Id 'launch-winutil' -Name 'Launch WinUtil' -Category 'Tools' -Description 'Downloads and runs Chris Titus Tech Windows Utility.' -SourceUri 'https://christitus.com/win' -Impact 'Executes remote PowerShell from christitus.com. Changes are made only when selected inside WinUtil.' -RequiresAdmin $true -NeedsBypass $true -ResultMode 'None' -Accent '#2DD4BF'
     New-CatalogItem -Id 'kvm-client-tailscale-diagnostics' -Name 'KVM Client Tailscale Diagnostics' -Category 'Diagnostics' -Description 'Tests the viewer-side Tailscale path, latency, loss, NAT conditions, and JetKVM web reachability.' -ScriptPath 'KvmClientTailscaleDiagnostics.ps1' -ScriptArguments '-KvmName $KvmName -PingCount 10 -NonInteractive' -Impact 'Performs read-only Tailscale, ping, netcheck, and TCP tests and saves a text report to Downloads.' -InputTitle 'KVM machine name' -InputMessage 'Enter the KVM machine name exactly as it appears in Tailscale.' -InputVariable 'KvmName' -Accent '#22D3EE' -SuccessMessage 'The viewer-side KVM connection tests completed; review the good, warning, and problem counts below.'
     New-CatalogItem -Id 'kvm-site-network-diagnostics' -Name 'KVM Site Network Diagnostics' -Category 'Diagnostics' -Description 'Checks the KVM-site router path, NAT, firewall, UDP/STUN, port mapping, and Tailscale conditions.' -ScriptPath 'KvmSiteNetworkDiagnostics.ps1' -ScriptArguments '-KvmName $KvmName -NonInteractive' -Impact 'Performs read-only local and internet connectivity tests and saves a text report to Downloads.' -InputTitle 'KVM report label' -InputMessage 'Enter the KVM machine name. It labels the report and enables an optional Tailscale lookup.' -InputVariable 'KvmName' -Accent '#34D399' -SuccessMessage 'The KVM-site network tests completed; review the good, warning, and problem counts below.'
+    New-CatalogItem -Id 'watch-wol-packets' -Name 'Watch Wake-on-LAN Packets' -Category 'Diagnostics' -Description 'Opens a live popup that watches network adapters for UDP packets on Wake-on-LAN ports 7 and 9.' -ScriptPath 'Watch-WakeOnLanPackets.ps1' -Impact 'Stops any existing machine-wide Pktmon capture, replaces all Pktmon filters with UDP 7 and 9 filters, and runs a live NIC capture until the popup closes. Closing it stops capture and removes the filters.' -RequiresAdmin $true -CanQueue $false -ResultMode 'None' -Accent '#34D399' -SuccessMessage 'Wake-on-LAN packet watching finished and Pktmon was cleaned up.'
     New-CatalogItem -Id 'configure-hp-bios' -Name 'Configure HP BIOS' -Category 'BIOS' -Description 'Configures common writable HP commercial BIOS settings and installs HPCMSL with compatible gallery tooling if needed.' -ScriptPath 'Configure-HPBIOS.ps1' -ScriptArguments '-BIOSPassword $BIOSPassword' -Impact 'May update PowerShellGet and install HP management components, then changes supported firmware settings. Test each model and restart afterward.' -RequiresAdmin $true -InputTitle 'BIOS setup password' -InputMessage 'Optional: enter the BIOS setup password, or leave it blank if none is configured.' -InputVariable 'BIOSPassword' -InputOptional $true -InputSecret $true -ConflictGroup 'bios-vendor' -Accent '#22D3EE' -SuccessMessage 'Supported HP BIOS settings were applied or reported with model-specific guidance.'
+    New-CatalogItem -Id 'configure-hp-g5-mini-wol-kvm' -Name 'Configure HP G5 Mini WOL/KVM' -Category 'BIOS' -Description 'Configures an HP EliteDesk 800 G5 Desktop Mini for JetKVM USB power, pre-boot keyboard access, and Wake-on-LAN.' -ScriptPath 'Configure-HPEliteDesk800G5WolKvm.ps1' -ScriptArguments '-BiosPassword $BIOSPassword' -Impact "The script is restricted to machines detected as an HP EliteDesk 800 G5 Desktop Mini, so it stops without making changes on a different model.`n`nIt will:`n• Check and configure the required HP BIOS settings for JetKVM USB power, pre-boot keyboard access, Wake-on-LAN, and recovery after a power cut. The setting names and accepted values come directly from the BIOS export from this machine.`n• Disable Windows Fast Startup.`n• Enable WakeOnMagicPacket and disable pattern-based waking on every physical wired Ethernet adapter that supports those options.`n• Enable supported driver options such as Shutdown WOL, S5 WOL, and PME.`n• Arm the Ethernet adapter with powercfg /deviceenablewake.`n• Avoid restarting the network adapter while running; some adapter changes require a PC restart before becoming active.`n• Export every HP BIOS setting and all configuration results to a TXT report.`n• Display the selected wired MAC address in colon format, for example AA:BB:CC:DD:EE:FF, and copy it to the clipboard.`n`nRestart the PC once after completion." -RequiresAdmin $true -InputTitle 'HP G5 Mini BIOS password' -InputMessage 'Optional: enter the HP BIOS administrator password, or leave it blank if none is configured.' -InputVariable 'BIOSPassword' -InputOptional $true -InputSecret $true -ConflictGroup 'bios-vendor' -CanQueue $false -ResultMode 'None' -Accent '#F59E0B' -SuccessMessage 'The HP G5 Mini WOL/KVM configuration finished and displayed its MAC address and report path.'
     New-CatalogItem -Id 'configure-dell-bios' -Name 'Configure Dell BIOS' -Category 'BIOS' -Description 'Configures common Dell commercial BIOS settings using Dell Command Configure.' -ScriptPath 'Configure-DellBIOS.ps1' -ScriptArguments '-BIOSPassword $BIOSPassword' -Impact 'May install Dell Command Configure and changes supported firmware settings. Test each model and restart afterward.' -RequiresAdmin $true -InputTitle 'BIOS setup password' -InputMessage 'Optional: enter the BIOS setup password, or leave it blank if none is configured.' -InputVariable 'BIOSPassword' -InputOptional $true -InputSecret $true -ConflictGroup 'bios-vendor' -Accent '#C084FC' -SuccessMessage 'Supported Dell BIOS settings were applied or reported with model-specific guidance.'
     New-CatalogItem -Id 'configure-lenovo-bios' -Name 'Configure Lenovo BIOS' -Category 'BIOS' -Description 'Configures common ThinkPad, ThinkCentre, and ThinkStation BIOS settings through Lenovo WMI.' -ScriptPath 'Configure-LenovoBIOS.ps1' -ScriptArguments '-BIOSPassword $BIOSPassword' -Impact 'Changes supported firmware settings through Lenovo WMI. Test each product family and restart afterward.' -RequiresAdmin $true -InputTitle 'BIOS setup password' -InputMessage 'Optional: enter the BIOS setup password, or leave it blank if none is configured.' -InputVariable 'BIOSPassword' -InputOptional $true -InputSecret $true -ConflictGroup 'bios-vendor' -Accent '#34D399' -SuccessMessage 'Supported Lenovo BIOS settings were applied or reported with model-specific guidance.'
 )
@@ -1415,7 +1418,7 @@ Add-TerminalLine 'Temporary runtime data will be removed when this window closes
 $script:OutputTimer.Start()
 
 if ($env:SCRIPTBOX_TEST_MODE -eq '1') {
-    if ($script:Catalog.Count -ne 25 -or @($script:Catalog | Where-Object InlineScript).Count -ne 0) {
+    if ($script:Catalog.Count -ne 28 -or @($script:Catalog | Where-Object InlineScript).Count -ne 0) {
         throw 'Lazy catalog validation failed.'
     }
     $cautionItems = @($script:Catalog | Where-Object Category -eq 'Warning - Use With Caution')
@@ -1427,7 +1430,7 @@ if ($env:SCRIPTBOX_TEST_MODE -eq '1') {
         throw 'Warning category and destructive-action safeguards validation failed.'
     }
     $allScriptsButton = @($script:CategoryHost.Children | Where-Object Tag -eq 'All scripts')[0]
-    if ($script:CardsHost.Children.Count -ne 23 -or $allScriptsButton.Content -ne 'All scripts   23') {
+    if ($script:CardsHost.Children.Count -ne 26 -or $allScriptsButton.Content -ne 'All scripts   26') {
         throw 'All scripts must exclude warning-only actions.'
     }
     $fixesItems = @($script:Catalog | Where-Object Category -eq 'Fixes')
@@ -1435,6 +1438,21 @@ if ($env:SCRIPTBOX_TEST_MODE -eq '1') {
     if ($fixesItems.Count -ne 1 -or $fixesItems[0].Id -ne 'repair-power-menu-system-tray' -or
         $fixesButton.Content -ne 'Fixes   1') {
         throw 'Fixes category validation failed.'
+    }
+    $usbItem = @($script:Catalog | Where-Object Id -eq 'show-connected-usb-devices')
+    $wolItem = @($script:Catalog | Where-Object Id -eq 'watch-wol-packets')
+    if ($usbItem.Count -ne 1 -or $usbItem[0].RequiresAdmin -or $usbItem[0].CanQueue -or
+        $usbItem[0].ResultMode -ne 'None' -or
+        $wolItem.Count -ne 1 -or -not $wolItem[0].RequiresAdmin -or $wolItem[0].CanQueue -or
+        $wolItem[0].ResultMode -ne 'None') {
+        throw 'Interactive USB and Wake-on-LAN catalog validation failed.'
+    }
+    $hpG5Item = @($script:Catalog | Where-Object Id -eq 'configure-hp-g5-mini-wol-kvm')
+    if ($hpG5Item.Count -ne 1 -or -not $hpG5Item[0].RequiresAdmin -or $hpG5Item[0].CanQueue -or
+        $hpG5Item[0].ResultMode -ne 'None' -or $hpG5Item[0].InputVariable -ne 'BIOSPassword' -or
+        $hpG5Item[0].ConflictGroup -ne 'bios-vendor' -or
+        $hpG5Item[0].Impact -notmatch 'restricted to machines detected as an HP EliteDesk 800 G5 Desktop Mini') {
+        throw 'HP G5 Mini WOL/KVM catalog validation failed.'
     }
     foreach ($catalogItem in @($script:Catalog | Where-Object ScriptPath)) {
         $catalogPath = Join-Path $PSScriptRoot (Join-Path 'scripts' $catalogItem.ScriptPath)
@@ -1485,7 +1503,7 @@ if ($env:SCRIPTBOX_TEST_MODE -eq '1') {
         throw 'Multi-select count validation failed.'
     }
     if (@($script:Catalog | Where-Object ConflictGroup -eq 'windows-update-mode').Count -ne 2 -or
-        @($script:Catalog | Where-Object ConflictGroup -eq 'bios-vendor').Count -ne 3 -or
+        @($script:Catalog | Where-Object ConflictGroup -eq 'bios-vendor').Count -ne 4 -or
         @($script:Catalog | Where-Object ConflictGroup -eq 'power-menu-visibility').Count -ne 2) {
         throw 'Conflict group validation failed.'
     }

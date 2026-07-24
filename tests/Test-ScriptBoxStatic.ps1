@@ -11,6 +11,9 @@ $scriptsPath = Join-Path $repositoryRoot 'scripts'
 $resetPath = Join-Path $scriptsPath 'Reset-WindowsRemoveEverything.ps1'
 $hideShutdownPath = Join-Path $scriptsPath 'Hide-ShutdownOptions.ps1'
 $repairShellPath = Join-Path $scriptsPath 'Repair-PowerMenuAndSystemTray.ps1'
+$usbDevicesPath = Join-Path $scriptsPath 'Show-ConnectedUSBDevices.ps1'
+$wolWatcherPath = Join-Path $scriptsPath 'Watch-WakeOnLanPackets.ps1'
+$hpG5WolKvmPath = Join-Path $scriptsPath 'Configure-HPEliteDesk800G5WolKvm.ps1'
 $files = @($launcherPath) + @(Get-ChildItem -LiteralPath $scriptsPath -Filter '*.ps1' -File | Select-Object -ExpandProperty FullName)
 
 $parseFailures = New-Object System.Collections.Generic.List[string]
@@ -97,6 +100,50 @@ $repairShellSource = Get-Content -Raw -LiteralPath $repairShellPath
 if ($repairShellSource -notmatch 'PolicyManager\\default' -or
     $repairShellSource -notmatch "Remove-ItemProperty.+Name 'NoClose'") {
     throw 'The Windows shell repair must reverse both legacy ScriptBox policy changes.'
+}
+
+$usbDevicesSource = Get-Content -Raw -LiteralPath $usbDevicesPath
+if ($usbDevicesSource -notmatch 'Get-PnpDevice -PresentOnly' -or
+    $usbDevicesSource -notmatch 'DEVPKEY_Device_LocationInfo' -or
+    $usbDevicesSource -notmatch 'DEVPKEY_Device_LocationPaths' -or
+    $usbDevicesSource -notmatch 'ShowDialog') {
+    throw 'The USB device viewer must query present USB devices and show its formatted popup.'
+}
+
+$wolWatcherSource = Get-Content -Raw -LiteralPath $wolWatcherPath
+foreach ($requiredWolText in @(
+    'filter add WOL-Port-7 -t UDP -p 7',
+    'filter add WOL-Port-9 -t UDP -p 9',
+    'start --capture --comp nics --pkt-size 0 --log-mode real-time',
+    "Arguments 'stop'",
+    "Arguments 'filter remove'"
+)) {
+    if ($wolWatcherSource -notmatch [regex]::Escape($requiredWolText)) {
+        throw "The Wake-on-LAN watcher is missing required Pktmon behavior: $requiredWolText"
+    }
+}
+if ($wolWatcherSource -notmatch 'DispatcherTimer' -or $wolWatcherSource -notmatch 'ShowDialog') {
+    throw 'The Wake-on-LAN watcher must poll real-time output in a popup.'
+}
+
+$hpG5WolKvmSource = Get-Content -Raw -LiteralPath $hpG5WolKvmPath
+foreach ($requiredHpG5Text in @(
+    "ExpectedModel = 'HP EliteDesk 800 G5 Desktop Mini'",
+    "'USB Legacy Port Charging'",
+    "'Wake On LAN'",
+    "'S5 Maximum Power Savings'",
+    "Name 'HiberbootEnabled'",
+    'Set-NetAdapterPowerManagement @powerParameters',
+    '/deviceenablewake',
+    'ALL HP BIOS SETTINGS AFTER CONFIGURATION',
+    'ConvertTo-ColonMac'
+)) {
+    if ($hpG5WolKvmSource -notmatch [regex]::Escape($requiredHpG5Text)) {
+        throw "The HP G5 Mini workflow is missing required behavior: $requiredHpG5Text"
+    }
+}
+if ($hpG5WolKvmSource -match '\[\(\]\(%28\)|\[\{\]\(%7B\)|\[powerParameters\]\(powerParameters\)') {
+    throw 'The HP G5 Mini workflow still contains URL/Markdown-corrupted PowerShell tokens.'
 }
 
 $methodCollectionType = [Microsoft.Management.Infrastructure.CimClass].GetProperty('CimClassMethods').PropertyType

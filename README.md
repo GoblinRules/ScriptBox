@@ -26,10 +26,10 @@ ScriptBox does not install itself. The initial launcher fetches only the UI/cata
 - **Remote Access** — enable RDP, NLA, firewall access, and the signed-in user.
 - **Windows Update** — choose security-focused automatic updates or completely manual updates.
 - **Software** — install or update the core Ninite application bundle.
-- **Utilities** — deploy the matching Laptop Lid Check popup and Public Desktop shortcut.
+- **Utilities** — view connected USB devices in a formatted popup or deploy the matching Laptop Lid Check shortcut.
 - **Tools** — launch JetFuel, InvokeX, or Chris Titus Tech Windows Utility from their current remote source.
-- **Diagnostics** — test either the viewer-side Tailscale path to a KVM or the KVM-site router, NAT, firewall, and UDP conditions.
-- **BIOS** — conservative HP, Dell, and Lenovo commercial-device configuration helpers.
+- **Diagnostics** — test KVM connectivity and site networking, or watch live Wake-on-LAN traffic on UDP ports 7 and 9.
+- **BIOS** — conservative HP, Dell, and Lenovo helpers, including a model-gated HP EliteDesk 800 G5 Mini JetKVM/WOL workflow.
 
 Use **i** to inspect impact, elevation, execution-policy behavior, and the exact on-demand source. Use **RUN** for one task. Tick **SELECT** on several cards and choose **RUN SELECTED** to execute them sequentially. ScriptBox prevents conflicting update modes, BIOS vendors, and simultaneous restart/shutdown selections. Scripts that need administrator rights trigger Windows UAC automatically. Only catalog entries marked as requiring a policy bypass receive `-ExecutionPolicy Bypass`, and only for their child PowerShell process.
 
