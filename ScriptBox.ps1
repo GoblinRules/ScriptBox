@@ -1,4 +1,4 @@
-﻿#requires -Version 5.1
+#requires -Version 5.1
 <#+
 .SYNOPSIS
     ScriptBox - a portable, category-based Windows script launcher.
@@ -11,7 +11,7 @@ Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 
 $script:AppName = 'ScriptBox'
-$script:Version = '3.3.0'
+$script:Version = '3.3.1'
 $script:Repository = 'https://github.com/GoblinRules/ScriptBox'
 $script:SelfSource = 'https://raw.githubusercontent.com/GoblinRules/ScriptBox/main/ScriptBox.ps1'
 $script:IconSource = 'https://raw.githubusercontent.com/GoblinRules/ScriptBox/main/assets/icon.png'
@@ -22,6 +22,7 @@ $script:ActiveCategory = 'All scripts'
 $script:IsDarkTheme = $true
 $script:SystemInfoLoaded = $false
 $script:SystemInfoSnapshot = $null
+$script:SystemInfoGather = $null
 $script:ApplicationStatusCache = @{}
 $script:TerminalMode = 'Normal'
 $script:SectionButtons = @{}
@@ -215,7 +216,7 @@ $script:Catalog = @(
     New-CatalogItem -Id 'kvm-site-network-diagnostics' -Name 'KVM Site Network Diagnostics' -Category 'Diagnostics' -Description 'Checks the KVM-site router path, NAT, firewall, UDP/STUN, port mapping, and Tailscale conditions.' -ScriptPath 'KvmSiteNetworkDiagnostics.ps1' -ScriptArguments '-KvmName $KvmName -NonInteractive' -Impact 'Performs read-only local and internet connectivity tests and saves a text report to Downloads.' -InputTitle 'KVM report label' -InputMessage 'Enter the KVM machine name. It labels the report and enables an optional Tailscale lookup.' -InputVariable 'KvmName' -Accent '#34D399' -SuccessMessage 'The KVM-site network tests completed; review the good, warning, and problem counts below.'
     New-CatalogItem -Id 'watch-wol-packets' -Name 'Watch Wake-on-LAN Packets' -Category 'Diagnostics' -Description 'Opens a live popup that watches network adapters for UDP packets on Wake-on-LAN ports 7 and 9.' -ScriptPath 'Watch-WakeOnLanPackets.ps1' -Impact 'Stops any existing machine-wide Pktmon capture, replaces all Pktmon filters with UDP 7 and 9 filters, and runs a live NIC capture until the popup closes. Closing it stops capture and removes the filters.' -RequiresAdmin $true -CanQueue $false -ResultMode 'None' -Accent '#34D399' -SuccessMessage 'Wake-on-LAN packet watching finished and Pktmon was cleaned up.'
     New-CatalogItem -Id 'configure-hp-bios' -Name 'Configure HP BIOS' -Category 'BIOS' -Description 'Configures common writable HP commercial BIOS settings and installs HPCMSL with compatible gallery tooling if needed.' -ScriptPath 'Configure-HPBIOS.ps1' -ScriptArguments '-BIOSPassword $BIOSPassword' -Impact 'If needed, installs the NuGet provider, repairs PackageManagement/PowerShellGet, accepts the HP module licence, and installs HPCMSL for all users. PSGallery is trusted only during setup and its prior policy is restored afterward. A fresh Windows PowerShell process is used, with PowerShell 7 as a fallback only when it is already installed. The action then changes supported firmware settings. Test each model and restart afterward.' -RequiresAdmin $true -InputTitle 'BIOS setup password' -InputMessage 'Optional: enter the BIOS setup password, or leave it blank if none is configured.' -InputVariable 'BIOSPassword' -InputOptional $true -InputSecret $true -ConflictGroup 'bios-vendor' -Accent '#22D3EE' -SuccessMessage 'Supported HP BIOS settings were applied or reported with model-specific guidance.'
-    New-CatalogItem -Id 'configure-hp-g3-g5-mini-wol-kvm' -Name 'Configure HP G3/G5 Mini WOL/KVM' -Category 'BIOS' -Description 'Configures an HP EliteDesk 800 G3 or G5 Desktop Mini for JetKVM USB power, pre-boot keyboard access, and Wake-on-LAN.' -ScriptPath 'Configure-HPEliteDesk800G5WolKvm.ps1' -ScriptArguments '-BiosPassword $BIOSPassword' -Impact "The script is restricted to HP EliteDesk 800 G3 and G5 Desktop Mini systems, including 35W and 65W variants, so it stops without making changes on other models.`n`nIt will:`n• Check and configure the required HP BIOS settings for JetKVM USB power, pre-boot keyboard access, Wake-on-LAN, and recovery after a power cut. Settings are applied only when that exact HP BIOS setting is exposed; settings unavailable on a G3 or G5 are reported as warnings and are not guessed or forced.`n• Disable Windows Fast Startup.`n• Enable WakeOnMagicPacket and disable pattern-based waking on every physical wired Ethernet adapter that supports those options.`n• Enable supported driver options such as Shutdown WOL, S5 WOL, and PME.`n• Arm the Ethernet adapter with powercfg /deviceenablewake.`n• Avoid restarting the network adapter while running; some adapter changes require a PC restart before becoming active.`n• Export every HP BIOS setting and all configuration results to a TXT report.`n• Display the selected wired MAC address in colon format, for example AA:BB:CC:DD:EE:FF, and copy it to the clipboard.`n`nRestart the PC once after completion." -RequiresAdmin $true -InputTitle 'HP G3/G5 Mini BIOS password' -InputMessage 'Optional: enter the HP BIOS administrator password, or leave it blank if none is configured.' -InputVariable 'BIOSPassword' -InputOptional $true -InputSecret $true -ConflictGroup 'bios-vendor' -CanQueue $false -ResultMode 'None' -Accent '#F59E0B' -SuccessMessage 'The HP G3/G5 Mini WOL/KVM configuration finished and displayed its MAC address and report path.'
+    New-CatalogItem -Id 'configure-hp-g3-g5-mini-wol-kvm' -Name 'Configure HP G3/G5 Mini WOL/KVM' -Category 'BIOS' -Description 'Configures an HP EliteDesk 800 G3 or G5 Desktop Mini for JetKVM USB power, pre-boot keyboard access, and Wake-on-LAN.' -ScriptPath 'Configure-HPEliteDesk800G5WolKvm.ps1' -ScriptArguments '-BiosPassword $BIOSPassword' -Impact "The script is restricted to HP EliteDesk 800 G3 and G5 Desktop Mini systems, including 35W and 65W variants, so it stops without making changes on other models.`n`nIt will:`n$([char]0x2022) Check and configure the required HP BIOS settings for JetKVM USB power, pre-boot keyboard access, Wake-on-LAN, and recovery after a power cut. Settings are applied only when that exact HP BIOS setting is exposed; settings unavailable on a G3 or G5 are reported as warnings and are not guessed or forced.`n$([char]0x2022) Disable Windows Fast Startup.`n$([char]0x2022) Enable WakeOnMagicPacket and disable pattern-based waking on every physical wired Ethernet adapter that supports those options.`n$([char]0x2022) Enable supported driver options such as Shutdown WOL, S5 WOL, and PME.`n$([char]0x2022) Arm the Ethernet adapter with powercfg /deviceenablewake.`n$([char]0x2022) Avoid restarting the network adapter while running; some adapter changes require a PC restart before becoming active.`n$([char]0x2022) Export every HP BIOS setting and all configuration results to a TXT report.`n$([char]0x2022) Display the selected wired MAC address in colon format, for example AA:BB:CC:DD:EE:FF, and copy it to the clipboard.`n`nRestart the PC once after completion." -RequiresAdmin $true -InputTitle 'HP G3/G5 Mini BIOS password' -InputMessage 'Optional: enter the HP BIOS administrator password, or leave it blank if none is configured.' -InputVariable 'BIOSPassword' -InputOptional $true -InputSecret $true -ConflictGroup 'bios-vendor' -CanQueue $false -ResultMode 'None' -Accent '#F59E0B' -SuccessMessage 'The HP G3/G5 Mini WOL/KVM configuration finished and displayed its MAC address and report path.'
     New-CatalogItem -Id 'configure-dell-bios' -Name 'Configure Dell BIOS' -Category 'BIOS' -Description 'Configures common Dell commercial BIOS settings using Dell Command Configure.' -ScriptPath 'Configure-DellBIOS.ps1' -ScriptArguments '-BIOSPassword $BIOSPassword' -Impact 'May install Dell Command Configure and changes supported firmware settings. Test each model and restart afterward.' -RequiresAdmin $true -InputTitle 'BIOS setup password' -InputMessage 'Optional: enter the BIOS setup password, or leave it blank if none is configured.' -InputVariable 'BIOSPassword' -InputOptional $true -InputSecret $true -ConflictGroup 'bios-vendor' -Accent '#C084FC' -SuccessMessage 'Supported Dell BIOS settings were applied or reported with model-specific guidance.'
     New-CatalogItem -Id 'configure-lenovo-bios' -Name 'Configure Lenovo BIOS' -Category 'BIOS' -Description 'Configures Lenovo BIOS through built-in WMI, including a verified ThinkCentre M710q Tiny WOL/KVM profile.' -ScriptPath 'Configure-LenovoBIOS.ps1' -ScriptArguments '-BIOSPassword $BIOSPassword' -Impact 'On an M710q Tiny, enables Ethernet, WOL, Smart Power On, USB and legacy USB support; disables Enhanced Power Saving Mode; and powers on after AC recovery. Other Lenovo models receive exact-name matches only. Restart afterward.' -RequiresAdmin $true -InputTitle 'BIOS setup password' -InputMessage 'Optional: enter the Lenovo supervisor/administrator BIOS password, or leave it blank if none is configured.' -InputVariable 'BIOSPassword' -InputOptional $true -InputSecret $true -ConflictGroup 'bios-vendor' -Accent '#34D399' -SuccessMessage 'Lenovo BIOS settings were saved once and verified against the firmware readback report.'
 )
@@ -233,7 +234,7 @@ $script:ApplicationLinks = @(
         [pscustomobject]@{ Text='Download Portable'; Type='Portable'; Uri='https://github.com/GoblinRules/ClearShot/releases/download/v1.3.8/ClearShot.exe'; FileName='ClearShot.exe'; RequiresAdmin=$false; Impact='Downloads the portable ClearShot executable to the current user''s Desktop. It does not run it automatically.' },
         [pscustomobject]@{ Text='Download Installer'; Type='Exe'; Uri='https://github.com/GoblinRules/ClearShot/releases/download/v1.3.8/ClearShot_Setup_1.3.8.exe'; FileName='ClearShot_Setup_1.3.8.exe'; RequiresAdmin=$true; Impact='Downloads the ClearShot installer to a temporary file and starts it with administrator rights.' }
     ) }
-    [pscustomobject]@{ Id='slickclick'; Name='SlickClick'; Description='Lightweight auto-clicker—set pace, pick targets, and use tray controls.'; Tags=@('UTILITY'); Uri='https://github.com/GoblinRules/SlickClick'; LinkLabel='GitHub'; Accent='#34D399'; Actions=@(
+    [pscustomobject]@{ Id='slickclick'; Name='SlickClick'; Description="Lightweight auto-clicker$([char]0x2014)set pace, pick targets, and use tray controls."; Tags=@('UTILITY'); Uri='https://github.com/GoblinRules/SlickClick'; LinkLabel='GitHub'; Accent='#34D399'; Actions=@(
         [pscustomobject]@{ Text='Download Portable'; Type='Portable'; Uri='https://github.com/GoblinRules/SlickClick/releases/download/V1.3.2/SlickClick.exe'; FileName='SlickClick.exe'; RequiresAdmin=$false; Impact='Downloads the portable SlickClick executable to the current user''s Desktop. It does not run it automatically.' },
         [pscustomobject]@{ Text='Download Installer'; Type='Exe'; Uri='https://github.com/GoblinRules/SlickClick/releases/download/V1.3.2/SlickClick_Setup_v1.3.2.exe'; FileName='SlickClick_Setup_v1.3.2.exe'; RequiresAdmin=$true; Impact='Downloads the SlickClick installer to a temporary file and starts it with administrator rights.' }
     ) }
@@ -381,10 +382,11 @@ $windowXaml = @'
 
                 <Border Grid.Row="3" Background="Transparent" BorderThickness="0" Padding="0">
                     <StackPanel>
-                        <Button x:Name="ControlPanelButton" Content="⚒  Control Panel" Height="34" FontSize="10" HorizontalContentAlignment="Left" Padding="11,6" Margin="0,0,0,6"/>
-                        <Button x:Name="SettingsButton" Content="⚙  Settings" Height="34" FontSize="10" HorizontalContentAlignment="Left" Padding="11,6" Margin="0,0,0,6"/>
-                        <Button x:Name="OpenTerminalButton" Content="▰  Terminal" Height="34" FontSize="10" HorizontalContentAlignment="Left" Padding="11,6" Margin="0,0,0,6"/>
-                        <Button x:Name="ElevateButton" Content="↻  Restart as Admin" Height="34" FontSize="10" HorizontalContentAlignment="Left" Padding="11,6" Margin="0,0,0,9"/>
+                        <Button x:Name="ControlPanelButton" Content="&#x2692;  Control Panel" Height="34" FontSize="10" HorizontalContentAlignment="Left" Padding="11,6" Margin="0,0,0,6"/>
+                        <Button x:Name="SettingsButton" Content="&#x2699;  Settings" Height="34" FontSize="10" HorizontalContentAlignment="Left" Padding="11,6" Margin="0,0,0,6"/>
+                        <Button x:Name="OpenTerminalButton" Content="&#x25B0;  Terminal" Height="34" FontSize="10" HorizontalContentAlignment="Left" Padding="11,6" Margin="0,0,0,6"/>
+                        <Button x:Name="TaskManagerButton" Content="&#x25A6;  Task Manager" Height="34" FontSize="10" HorizontalContentAlignment="Left" Padding="11,6" Margin="0,0,0,6"/>
+                        <Button x:Name="ElevateButton" Content="&#x21BB;  Restart as Admin" Height="34" FontSize="10" HorizontalContentAlignment="Left" Padding="11,6" Margin="0,0,0,9"/>
                         <TextBlock x:Name="PrivilegeLabel" FontSize="10" FontWeight="SemiBold" Foreground="#22C55E" Margin="2,0,0,4"/>
                         <TextBlock Text="ScriptBox stays portable" FontSize="9" Foreground="{DynamicResource MutedText}" Margin="2,0,0,0"/>
                     </StackPanel>
@@ -398,7 +400,7 @@ $windowXaml = @'
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
             <Grid x:Name="SearchPanel" Width="520" HorizontalAlignment="Left">
-                <TextBlock Text="⌕" FontSize="17" Foreground="{DynamicResource MutedText}" Margin="13,7,0,0" Panel.ZIndex="1"/>
+                <TextBlock Text="&#x2315;" FontSize="17" Foreground="{DynamicResource MutedText}" Margin="13,7,0,0" Panel.ZIndex="1"/>
                 <TextBlock x:Name="SearchHint" Text="Search apps and scripts...  (Ctrl+K)" FontSize="12" Foreground="{DynamicResource MutedText}"
                            Margin="39,12,0,0" IsHitTestVisible="False" Panel.ZIndex="1"/>
                 <TextBox x:Name="SearchBox" Height="42" Padding="38,11,13,8" FontSize="13" VerticalContentAlignment="Center"/>
@@ -443,6 +445,7 @@ $windowXaml = @'
                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
                             <Button x:Name="ExpandTerminalButton" Content="EXPAND" FontSize="9" Padding="9,5" Margin="0,0,6,0"/>
                             <Button x:Name="CollapseTerminalButton" Content="COLLAPSE" FontSize="9" Padding="9,5" Margin="0,0,6,0"/>
+                            <Button x:Name="CopyTerminalButton" Content="COPY ALL" FontSize="9" Padding="9,5" Margin="0,0,6,0"/>
                             <Button x:Name="ClearTerminalButton" Content="CLEAR" FontSize="9" Padding="11,5"/>
                         </StackPanel>
                     </Grid>
@@ -473,6 +476,7 @@ $script:TerminalOutput = $script:Window.FindName('TerminalOutput')
 $script:TerminalStatus = $script:Window.FindName('TerminalStatus')
 $script:TerminalRow = $script:Window.FindName('TerminalRow')
 $script:ClearTerminalButton = $script:Window.FindName('ClearTerminalButton')
+$script:CopyTerminalButton = $script:Window.FindName('CopyTerminalButton')
 $script:ExpandTerminalButton = $script:Window.FindName('ExpandTerminalButton')
 $script:CollapseTerminalButton = $script:Window.FindName('CollapseTerminalButton')
 $script:RunSelectedButton = $script:Window.FindName('RunSelectedButton')
@@ -482,6 +486,7 @@ $script:ElevateButton = $script:Window.FindName('ElevateButton')
 $script:ControlPanelButton = $script:Window.FindName('ControlPanelButton')
 $script:SettingsButton = $script:Window.FindName('SettingsButton')
 $script:OpenTerminalButton = $script:Window.FindName('OpenTerminalButton')
+$script:TaskManagerButton = $script:Window.FindName('TaskManagerButton')
 $script:PrivilegeLabel = $script:Window.FindName('PrivilegeLabel')
 $script:AppIcon = $script:Window.FindName('AppIcon')
 $script:VersionLabel = $script:Window.FindName('VersionLabel')
@@ -601,7 +606,7 @@ function Show-ScriptBoxDialog {
                         <Ellipse Width="8" Height="8" Fill="#6366F1" Margin="0,0,10,0"/>
                         <TextBlock x:Name="PopupTitle" FontSize="13" FontWeight="Bold" Foreground="#F8FAFC" VerticalAlignment="Center"/>
                     </StackPanel>
-                    <Button x:Name="PopupCloseButton" Content="×" Width="34" Height="30" Padding="0"
+                    <Button x:Name="PopupCloseButton" Content="&#xD7;" Width="34" Height="30" Padding="0"
                             HorizontalAlignment="Right" VerticalAlignment="Center" Background="Transparent"
                             BorderThickness="0" Foreground="#94A3B8" FontSize="20" FontWeight="Normal"/>
                 </Grid>
@@ -709,7 +714,7 @@ function Show-ScriptBoxInputDialog {
                         <Ellipse Width="8" Height="8" Fill="#22C55E" Margin="0,0,10,0"/>
                         <TextBlock x:Name="InputTitle" FontSize="13" FontWeight="Bold" Foreground="#F8FAFC" VerticalAlignment="Center"/>
                     </StackPanel>
-                    <Button x:Name="InputCloseButton" Content="×" Width="34" Height="30" Padding="0"
+                    <Button x:Name="InputCloseButton" Content="&#xD7;" Width="34" Height="30" Padding="0"
                             HorizontalAlignment="Right" VerticalAlignment="Center" Background="Transparent"
                             BorderThickness="0" Foreground="#94A3B8" FontSize="20" FontWeight="Normal"/>
                 </Grid>
@@ -842,7 +847,7 @@ function Show-ScriptInfo {
                         <Ellipse Width="8" Height="8" Fill="#6366F1" Margin="0,0,10,0"/>
                         <TextBlock Text="SCRIPT DETAILS" FontSize="11" FontWeight="Bold" Foreground="#E2E8F0" VerticalAlignment="Center"/>
                     </StackPanel>
-                    <Button x:Name="WindowCloseButton" Content="×" Width="34" Height="30" Padding="0" HorizontalAlignment="Right"
+                    <Button x:Name="WindowCloseButton" Content="&#xD7;" Width="34" Height="30" Padding="0" HorizontalAlignment="Right"
                             VerticalAlignment="Center" Background="Transparent" BorderThickness="0" Foreground="#94A3B8" FontSize="20"/>
                 </Grid>
             </Border>
@@ -885,7 +890,7 @@ function Show-ScriptInfo {
     $dialog.Title = "$($Item.Name) - ScriptBox"
     $dialog.FindName('InfoTitle').Text = $Item.Name
     $dialog.FindName('InfoDescription').Text = $Item.Description
-    $dialog.FindName('InfoImpact').Text = "IMPACT  •  $($Item.Impact)"
+    $dialog.FindName('InfoImpact').Text = "IMPACT  $([char]0x2022)  $($Item.Impact)"
 
     $requirements = @()
     $requirements += if ($Item.RequiresAdmin) { 'Administrator approval: required' } else { 'Administrator approval: not required' }
@@ -898,7 +903,7 @@ function Show-ScriptInfo {
         $requirements += "Input: $($Item.InputTitle) requested before launch ($($inputTraits -join ', '))"
     }
     if (-not $Item.CanQueue) { $requirements += 'Batch queue: unavailable; run this action by itself' }
-    $dialog.FindName('InfoRequirements').Text = ($requirements -join '  •  ')
+    $dialog.FindName('InfoRequirements').Text = ($requirements -join "  $([char]0x2022)  ")
     $code = Get-CatalogPreview -Item $Item
     $dialog.FindName('InfoCode').Text = $code
 
@@ -925,9 +930,9 @@ function New-FriendlyResult {
         [string]$Output = ''
     )
 
-    $good = [regex]::Matches($Output, '(?im)\[(SUCCESS|GOOD)\]').Count
+    $good = [regex]::Matches($Output, '(?im)(\[(SUCCESS|GOOD)\]|:\s*PASS\b)').Count
     $warning = [regex]::Matches($Output, '(?im)\[(WARNING|WARN|CHECK|AMBER|UNSUPPORTED)\]').Count
-    $problem = [regex]::Matches($Output, '(?im)\[(ERROR|BAD|RED)\]').Count
+    $problem = [regex]::Matches($Output, '(?im)(\[(ERROR|BAD|RED)\]|:\s*FAIL\b)').Count
     if ($ExitCode -ne 0 -and $problem -eq 0) { $problem = 1 }
 
     $overall = [regex]::Match($Output, '(?im)^.*?Overall:\s*(.+)$')
@@ -985,7 +990,7 @@ function Show-ScriptBoxResult {
                         <Ellipse x:Name="ResultDot" Width="8" Height="8" Fill="#22C55E" Margin="0,0,10,0"/>
                         <TextBlock Text="SCRIPT RESULTS" FontSize="11" FontWeight="Bold" Foreground="#E2E8F0"/>
                     </StackPanel>
-                    <Button x:Name="ResultCloseX" Content="×" Width="34" Height="30" Padding="0" HorizontalAlignment="Right"
+                    <Button x:Name="ResultCloseX" Content="&#xD7;" Width="34" Height="30" Padding="0" HorizontalAlignment="Right"
                             VerticalAlignment="Center" Background="Transparent" BorderThickness="0" Foreground="#94A3B8" FontSize="20"/>
                 </Grid>
             </Border>
@@ -1018,10 +1023,15 @@ function Show-ScriptBoxResult {
                              Background="#08080D" Foreground="#9898B0" BorderBrush="#14FFFFFF" BorderThickness="1"
                              FontFamily="Cascadia Mono,Consolas" FontSize="11"/>
                 </Grid>
-                <Button x:Name="ResultClose" Grid.Row="4" Content="DONE" HorizontalAlignment="Right" Margin="0,18,0,0"
-                        Padding="22,8" Foreground="White" BorderThickness="0">
-                    <Button.Background><LinearGradientBrush StartPoint="0,0" EndPoint="1,1"><GradientStop Color="#6366F1" Offset="0"/><GradientStop Color="#4F46E5" Offset="1"/></LinearGradientBrush></Button.Background>
-                </Button>
+                <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,18,0,0">
+                    <Button x:Name="ResultCopy" Content="COPY OUTPUT" Margin="0,0,10,0" Padding="22,8"
+                            Background="#1A1A28" BorderBrush="#14FFFFFF" BorderThickness="1" Foreground="#9898B0"/>
+                    <Button x:Name="ResultSave" Content="SAVE RESULTS" Margin="0,0,10,0" Padding="22,8"
+                            Background="#1A1A28" BorderBrush="#14FFFFFF" BorderThickness="1" Foreground="#9898B0"/>
+                    <Button x:Name="ResultClose" Content="DONE" Padding="22,8" Foreground="White" BorderThickness="0">
+                        <Button.Background><LinearGradientBrush StartPoint="0,0" EndPoint="1,1"><GradientStop Color="#6366F1" Offset="0"/><GradientStop Color="#4F46E5" Offset="1"/></LinearGradientBrush></Button.Background>
+                    </Button>
+                </StackPanel>
             </Grid>
         </Grid>
     </Border>
@@ -1043,6 +1053,26 @@ function Show-ScriptBoxResult {
     $dialog.FindName('ResultDot').Fill = $accent
     $dialog.FindName('ResultClose').Add_Click({ $dialog.Close() }.GetNewClosure())
     $dialog.FindName('ResultCloseX').Add_Click({ $dialog.Close() }.GetNewClosure())
+    $addTerminalLine = ${function:Add-TerminalLine}
+    $saveTitle = $Title
+    $dialog.FindName('ResultCopy').Add_Click({
+        try { [Windows.Clipboard]::SetText($dialog.FindName('ResultOutput').Text) }
+        catch { & $addTerminalLine "Results could not be copied: $($_.Exception.Message)" }
+    }.GetNewClosure())
+    $dialog.FindName('ResultSave').Add_Click({
+        try {
+            $saveDialog = New-Object Microsoft.Win32.SaveFileDialog
+            $safeName = (($saveTitle -replace '[^A-Za-z0-9 _-]', ' ') -replace '\s+', '-').Trim('-')
+            $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+            $saveDialog.FileName = if ($safeName) { "ScriptBox-Results-$safeName-$timestamp.txt" } else { "ScriptBox-Results-$timestamp.txt" }
+            $saveDialog.Filter = 'Text files (*.txt)|*.txt|All files (*.*)|*.*'
+            $saveDialog.InitialDirectory = [Environment]::GetFolderPath('Desktop')
+            if ($saveDialog.ShowDialog()) {
+                [IO.File]::WriteAllText($saveDialog.FileName, $dialog.FindName('ResultOutput').Text, (New-Object Text.UTF8Encoding($false)))
+            }
+        }
+        catch { & $addTerminalLine "Results could not be saved: $($_.Exception.Message)" }
+    }.GetNewClosure())
     $dialog.FindName('ResultDragRegion').Add_MouseLeftButtonDown({
         param($sender, $eventArgs)
         if ($eventArgs.LeftButton -eq [Windows.Input.MouseButtonState]::Pressed) { $dialog.DragMove() }
@@ -1485,7 +1515,7 @@ function New-ApplicationCatalogItem {
     )
     $scriptText = New-ApplicationActionScript -Application $Application -Action $Action
     return New-CatalogItem -Id ("application-{0}-{1}" -f $Application.Id, [Guid]::NewGuid().ToString('N')) `
-        -Name ("{0} — {1}" -f $Application.Name, $Action.Text) -Category 'Applications' `
+        -Name ("{0} $([char]0x2014) {1}" -f $Application.Name, $Action.Text) -Category 'Applications' `
         -Description $Action.Impact -InlineScript ([scriptblock]::Create($scriptText)) `
         -RequiresAdmin ([bool]$Action.RequiresAdmin) -RequiresConfirmation $false `
         -CanQueue $true -ResultMode 'Summary' -Accent '#6366F1' `
@@ -1504,7 +1534,7 @@ function Start-ApplicationAction {
     $sourceText = if ([string]::IsNullOrWhiteSpace([string]$Action.Uri)) { 'Built-in Windows command' } else { [string]$Action.Uri }
     $message = "$($Action.Impact)`n`nSource:`n$sourceText`n`nScriptBox itself remains portable; this action affects only the selected application."
     if (-not (Show-ScriptBoxDialog -Title "$($Action.Text) $($Application.Name)?" -Message $message -Buttons YesNo -Kind Warning)) {
-        Add-TerminalLine "Cancelled: $($Application.Name) — $($Action.Text)"
+        Add-TerminalLine "Cancelled: $($Application.Name) $([char]0x2014) $($Action.Text)"
         return
     }
     Start-CatalogItem -Item (New-ApplicationCatalogItem -Application $Application -Action $Action)
@@ -1524,7 +1554,7 @@ function Start-SelectedApplications {
     }
     $applications = @($script:ApplicationLinks | Where-Object { $script:SelectedApplicationIds.Contains($_.Id) })
     if ($applications.Count -lt 1) { return }
-    $names = @($applications | ForEach-Object { "• $($_.Name) — $($_.Actions[0].Text)" }) -join [Environment]::NewLine
+    $names = @($applications | ForEach-Object { "$([char]0x2022) $($_.Name) $([char]0x2014) $($_.Actions[0].Text)" }) -join [Environment]::NewLine
     $message = "ScriptBox will run each selected application's primary action in order:`n`n$names`n`nDownloads and installers may show administrator or vendor prompts."
     if (-not (Show-ScriptBoxDialog -Title "Install $($applications.Count) selected application(s)?" -Message $message -Buttons YesNo -Kind Warning)) {
         Add-TerminalLine 'Selected application queue cancelled.'
@@ -1606,7 +1636,7 @@ function New-ApplicationCard {
     $statusPill.Margin = '7,0,7,0'
     [Windows.Controls.Grid]::SetColumn($statusPill, 1)
     $statusLabel = New-Object Windows.Controls.TextBlock
-    $statusLabel.Text = if ($applicationStatus -eq 'INSTALLED') { '✓ INSTALLED' } elseif ($applicationStatus -eq 'AVAILABLE') { '✓ AVAILABLE' } else { '○ NOT INSTALLED' }
+    $statusLabel.Text = if ($applicationStatus -eq 'INSTALLED') { "$([char]0x2713) INSTALLED" } elseif ($applicationStatus -eq 'AVAILABLE') { "$([char]0x2713) AVAILABLE" } else { "$([char]0x25CB) NOT INSTALLED" }
     $statusLabel.FontSize = 8
     $statusLabel.FontWeight = 'Bold'
     $statusLabel.Foreground = if ($applicationStatus -in @('INSTALLED','AVAILABLE')) { '#22C55E' } else { $script:Window.Resources['MutedText'] }
@@ -1642,7 +1672,7 @@ function New-ApplicationCard {
     [Windows.Controls.Grid]::SetRow($tags, 2)
 
     $linkButton = New-Object Windows.Controls.Button
-    $linkButton.Content = "↗  $($Application.LinkLabel)"
+    $linkButton.Content = "$([char]0x2197)  $($Application.LinkLabel)"
     $linkButton.HorizontalAlignment = 'Left'
     $linkButton.Padding = '0,2'
     $linkButton.Background = 'Transparent'
@@ -1793,7 +1823,7 @@ function Start-UtilityCommand {
     $utilityItem = New-CatalogItem -Id ("utility-{0}" -f [Guid]::NewGuid().ToString('N')) `
         -Name $Name -Category 'Built-in' -Description $Description `
         -InlineScript ([scriptblock]::Create($ScriptText)) -RequiresAdmin $RequiresAdmin `
-        -RequiresConfirmation $false -CanQueue $false -ResultMode 'None' -Accent '#22D3EE'
+        -RequiresConfirmation $false -CanQueue $false -ResultMode 'Summary' -Accent '#22D3EE'
     Start-CatalogItem -Item $utilityItem
 }
 
@@ -1816,14 +1846,13 @@ function Render-NetworkTools {
     Add-FeatureLabel -HostPanel $pingCard.Body -Text 'Address'
     $pingTarget = New-FeatureInput -Text '8.8.8.8'
     $pingCard.Body.Children.Add($pingTarget) | Out-Null
-    Add-FeatureLabel -HostPanel $pingCard.Body -Text 'Count (1–50)'
+    Add-FeatureLabel -HostPanel $pingCard.Body -Text "Count (1$([char]0x2013)50)"
     $pingCount = New-FeatureInput -Text '4'
     $pingCard.Body.Children.Add($pingCount) | Out-Null
     $pingButton = New-FeatureButton -Text 'RUN PING' -Accent '#22D3EE'
     $getSafeNetworkTarget = ${function:Get-SafeNetworkTarget}
     $startUtilityCommand = ${function:Start-UtilityCommand}
     $showScriptBoxDialog = ${function:Show-ScriptBoxDialog}
-    $addTerminalLine = ${function:Add-TerminalLine}
     $pingButton.Add_Click({
         try {
             $target = & $getSafeNetworkTarget -Target $pingTarget.Text
@@ -1859,7 +1888,7 @@ function Render-NetworkTools {
     Add-FeatureLabel -HostPanel $latencyCard.Body -Text 'Address'
     $latencyTarget = New-FeatureInput -Text '1.1.1.1'
     $latencyCard.Body.Children.Add($latencyTarget) | Out-Null
-    Add-FeatureLabel -HostPanel $latencyCard.Body -Text 'Samples (2–50)'
+    Add-FeatureLabel -HostPanel $latencyCard.Body -Text "Samples (2$([char]0x2013)50)"
     $latencyCount = New-FeatureInput -Text '10'
     $latencyCard.Body.Children.Add($latencyCount) | Out-Null
     $latencyButton = New-FeatureButton -Text 'RUN LATENCY TEST' -Accent '#60A5FA'
@@ -1893,7 +1922,7 @@ Write-Host ('Minimum: {0} ms  Average: {1:N1} ms  Maximum: {2} ms' -f `$stats.Mi
         [pscustomobject]@{ Text = 'FLUSH DNS'; Name = 'Flush DNS'; Admin = $true; Script = '& ipconfig.exe /flushdns' },
         [pscustomobject]@{ Text = 'IPCONFIG'; Name = 'IPConfig'; Admin = $false; Script = '& ipconfig.exe' },
         [pscustomobject]@{ Text = 'IPCONFIG /ALL'; Name = 'IPConfig all'; Admin = $false; Script = '& ipconfig.exe /all' },
-        [pscustomobject]@{ Text = 'NETWORK INFO'; Name = 'Network info'; Admin = $false; Script = 'Get-NetAdapter | Sort-Object Status, Name | Format-Table Name, Status, LinkSpeed, MacAddress, InterfaceDescription -AutoSize' }
+        [pscustomobject]@{ Text = 'NETWORK INFO'; Name = 'Network info'; Admin = $false; Script = 'Import-Module NetAdapter -ErrorAction SilentlyContinue; @(Get-NetAdapter -ErrorAction SilentlyContinue) | Sort-Object Status, Name | Format-Table Name, Status, LinkSpeed, MacAddress, InterfaceDescription -AutoSize | Out-String -Width 240' }
     )) {
         $actionButton = New-FeatureButton -Text $action.Text -Accent '#34D399'
         $actionButton.Add_Click({
@@ -1905,24 +1934,7 @@ Write-Host ('Minimum: {0} ms  Average: {1:N1} ms  Maximum: {2} ms' -f `$stats.Mi
     $quickCard.Body.Children.Add($quickButtons) | Out-Null
     $script:CardsHost.Children.Add($quickCard.Border) | Out-Null
 
-    $shortcutCard = New-FeatureCard -Title 'Windows Shortcuts' -Description 'Open native Windows administration surfaces without installing anything.' -Accent '#F59E0B'
-    $shortcutButtons = New-Object Windows.Controls.WrapPanel
-    foreach ($shortcut in @(
-        [pscustomobject]@{ Text = 'CONTROL PANEL'; Target = 'control.exe' },
-        [pscustomobject]@{ Text = 'SETTINGS'; Target = 'ms-settings:' },
-        [pscustomobject]@{ Text = 'TASK MANAGER'; Target = 'taskmgr.exe' },
-        [pscustomobject]@{ Text = 'TERMINAL'; Target = 'wt.exe' }
-    )) {
-        $shortcutButton = New-FeatureButton -Text $shortcut.Text -Accent '#F59E0B'
-        $shortcutButton.Add_Click({
-            try { Start-Process -FilePath $shortcut.Target -ErrorAction Stop }
-            catch { & $addTerminalLine "Could not open $($shortcut.Text): $($_.Exception.Message)" }
-        }.GetNewClosure())
-        $shortcutButtons.Children.Add($shortcutButton) | Out-Null
-    }
-    $shortcutCard.Body.Children.Add($shortcutButtons) | Out-Null
-    $script:CardsHost.Children.Add($shortcutCard.Border) | Out-Null
-    $script:ResultsLabel.Text = 'Built-in ping, traceroute, network commands, and Windows shortcuts.'
+    $script:ResultsLabel.Text = 'Built-in ping, traceroute, latency, and quick network commands.'
 }
 
 function Render-Diagnostics {
@@ -1934,7 +1946,7 @@ function Render-Diagnostics {
         -Description 'Read-only gateway, internet, DNS, TCP, and HTTPS checks. Detailed KVM diagnostics remain available in Scripts.' `
         -Accent '#38BDF8' -Width 820 -MinHeight 300
     $checklist = New-Object Windows.Controls.TextBlock
-    $checklist.Text = "• Active adapters and default gateway`n• Gateway and public ICMP reachability`n• DNS resolution`n• TCP 443 connectivity`n• HTTPS connectivity"
+    $checklist.Text = "$([char]0x2022) Active adapters and default gateway`n$([char]0x2022) Gateway and public ICMP reachability`n$([char]0x2022) DNS resolution`n$([char]0x2022) TCP 443 connectivity`n$([char]0x2022) HTTPS connectivity"
     $checklist.FontSize = 13
     $checklist.LineHeight = 24
     $checklist.Foreground = $script:Window.Resources['SecondaryText']
@@ -1944,8 +1956,10 @@ function Render-Diagnostics {
     $startUtilityCommand = ${function:Start-UtilityCommand}
     $runButton.Add_Click({
         $diagnosticScript = @'
+$ErrorActionPreference = 'Continue'
+Import-Module NetAdapter, NetTCPIP, DnsClient -ErrorAction SilentlyContinue
 Write-Host '=== ACTIVE NETWORK ADAPTERS ==='
-Get-NetAdapter | Where-Object Status -eq 'Up' | Format-Table Name, LinkSpeed, MacAddress, InterfaceDescription -AutoSize
+@(Get-NetAdapter -ErrorAction SilentlyContinue) | Where-Object Status -eq 'Up' | Format-Table Name, LinkSpeed, MacAddress, InterfaceDescription -AutoSize | Out-String -Width 240
 Write-Host ''
 $route = Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue | Sort-Object RouteMetric | Select-Object -First 1
 $gateway = if ($route) { $route.NextHop } else { $null }
@@ -1992,11 +2006,11 @@ function Get-SystemInfoSnapshot {
     }) -join [Environment]::NewLine
     $networkText = @($adapters | ForEach-Object {
         $address = @(Get-NetIPAddress -InterfaceIndex $_.ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue | Select-Object -ExpandProperty IPAddress) -join ', '
-        "$($_.Name)  •  $($_.LinkSpeed)`n$address`n$($_.MacAddress)"
+        "$($_.Name)  $([char]0x2022)  $($_.LinkSpeed)`n$address`n$($_.MacAddress)"
     }) -join ([Environment]::NewLine + [Environment]::NewLine)
 
     return [ordered]@{
-        'Operating System' = "$($os.Caption)`nVersion $($os.Version)  •  Build $($os.BuildNumber)`nUptime: $($uptime.Days)d $($uptime.Hours)h $($uptime.Minutes)m"
+        'Operating System' = "$($os.Caption)`nVersion $($os.Version)  $([char]0x2022)  Build $($os.BuildNumber)`nUptime: $($uptime.Days)d $($uptime.Hours)h $($uptime.Minutes)m"
         'Hardware' = "$($computer.Manufacturer) $($computer.Model)`nCPU: $($cpu.Name)`nRAM: $memoryGb GB`nGPU: $($gpu -join ', ')"
         'Firmware' = "BIOS: $($bios.SMBIOSBIOSVersion)`nSerial: $($bios.SerialNumber)`nComputer: $env:COMPUTERNAME`nUser: $env:USERDOMAIN\$env:USERNAME"
         'Storage' = $(if ($driveText) { $driveText } else { 'No local fixed disks reported.' })
@@ -2018,30 +2032,97 @@ function New-SystemInfoCard {
     return $card.Border
 }
 
+function Add-SystemInfoCards {
+    foreach ($entry in $script:SystemInfoSnapshot.GetEnumerator()) {
+        $script:CardsHost.Children.Add((New-SystemInfoCard -Title $entry.Key -Value ([string]$entry.Value))) | Out-Null
+    }
+    $refresh = New-FeatureCard -Title 'Refresh' -Description 'Reload the hardware, storage, and network snapshot.' -Accent '#34D399' -Width 500 -MinHeight 140
+    $refreshButton = New-FeatureButton -Text 'REFRESH SYSTEM INFO' -Accent '#34D399'
+    $refreshButton.Add_Click({
+        $script:SystemInfoLoaded = $false
+        $script:SystemInfoSnapshot = $null
+        Render-SystemInfo
+    })
+    $refresh.Body.Children.Add($refreshButton) | Out-Null
+    $script:CardsHost.Children.Add($refresh.Border) | Out-Null
+    $script:ResultsLabel.Text = 'Read-only operating system, hardware, storage, and network details.'
+}
+
+function Start-SystemInfoGather {
+    # Runs the snapshot in an in-process background runspace so multi-second
+    # CIM and adapter queries never freeze the UI thread. The payload reuses
+    # the literal body of Get-SystemInfoSnapshot, which is self-contained.
+    $snapshotScript = "try {`n" + ${function:Get-SystemInfoSnapshot}.ToString() + "`n}`ncatch { [ordered]@{ SnapshotError = [string]`$_.Exception.Message } }"
+    $gatherShell = [powershell]::Create()
+    [void]$gatherShell.AddScript($snapshotScript)
+    $gatherTimer = New-Object Windows.Threading.DispatcherTimer
+    $gatherTimer.Interval = [TimeSpan]::FromMilliseconds(250)
+    $script:SystemInfoGather = @{
+        PowerShell = $gatherShell
+        Handle     = $gatherShell.BeginInvoke()
+        Timer      = $gatherTimer
+    }
+    $gatherTimer.Add_Tick({
+        $gather = $script:SystemInfoGather
+        if (-not $gather) { return }
+        if (-not $gather.Handle.IsCompleted) { return }
+        $gather.Timer.Stop()
+        $script:SystemInfoGather = $null
+        $snapshot = $null
+        $gatherError = $null
+        try {
+            $results = $gather.PowerShell.EndInvoke($gather.Handle)
+            $snapshot = @($results | Where-Object { $_ -is [Collections.IDictionary] }) | Select-Object -Last 1
+        }
+        catch { $gatherError = $_.Exception.Message }
+        finally { $gather.PowerShell.Dispose() }
+        if (-not $gatherError -and $null -ne $snapshot -and $snapshot.Contains('SnapshotError')) {
+            $gatherError = [string]$snapshot['SnapshotError']
+        }
+        if (-not $gatherError -and $null -eq $snapshot) {
+            $gatherError = 'The background snapshot returned no data.'
+        }
+        if ($gatherError) {
+            $script:SystemInfoLoaded = $false
+            $script:SystemInfoSnapshot = $null
+            if ($script:ActiveSection -eq 'System Info') {
+                $script:ResultsLabel.Text = "System information could not be loaded: $gatherError"
+                Add-TerminalLine $script:ResultsLabel.Text
+            }
+            return
+        }
+        $script:SystemInfoSnapshot = $snapshot
+        $script:SystemInfoLoaded = $true
+        if ($script:ActiveSection -eq 'System Info') { Render-SystemInfo }
+    })
+    $gatherTimer.Start()
+}
+
 function Render-SystemInfo {
     $script:CardsHost.Children.Clear()
     $script:RunButtons.Clear()
     $script:SelectionControls.Clear()
     $script:ApplicationSelectionControls.Clear()
     try {
-        if (-not $script:SystemInfoLoaded -or $null -eq $script:SystemInfoSnapshot) {
-            $script:ResultsLabel.Text = 'Gathering system information...'
+        if ($script:SystemInfoLoaded -and $null -ne $script:SystemInfoSnapshot) {
+            Add-SystemInfoCards
+            return
+        }
+        $script:ResultsLabel.Text = 'Gathering system information...'
+        if ($env:SCRIPTBOX_TEST_MODE -eq '1') {
+            # The validation harness asserts card counts immediately after
+            # selecting the section, so gather synchronously in test mode.
             $script:SystemInfoSnapshot = Get-SystemInfoSnapshot
             $script:SystemInfoLoaded = $true
+            Add-SystemInfoCards
+            return
         }
-        foreach ($entry in $script:SystemInfoSnapshot.GetEnumerator()) {
-            $script:CardsHost.Children.Add((New-SystemInfoCard -Title $entry.Key -Value ([string]$entry.Value))) | Out-Null
-        }
-        $refresh = New-FeatureCard -Title 'Refresh' -Description 'Reload the hardware, storage, and network snapshot.' -Accent '#34D399' -Width 500 -MinHeight 140
-        $refreshButton = New-FeatureButton -Text 'REFRESH SYSTEM INFO' -Accent '#34D399'
-        $refreshButton.Add_Click({
-            $script:SystemInfoLoaded = $false
-            $script:SystemInfoSnapshot = $null
-            Render-SystemInfo
-        })
-        $refresh.Body.Children.Add($refreshButton) | Out-Null
-        $script:CardsHost.Children.Add($refresh.Border) | Out-Null
-        $script:ResultsLabel.Text = 'Read-only operating system, hardware, storage, and network details.'
+        $placeholder = New-FeatureCard -Title 'System Information' `
+            -Description 'Gathering system information... The cards will appear here in a moment.' `
+            -Accent '#60A5FA' -Width 500 -MinHeight 140
+        $script:CardsHost.Children.Add($placeholder.Border) | Out-Null
+        if ($null -ne $script:SystemInfoGather) { return } # a gather is already in flight
+        Start-SystemInfoGather
     }
     catch {
         $script:ResultsLabel.Text = "System information could not be loaded: $($_.Exception.Message)"
@@ -2054,7 +2135,7 @@ function Set-TerminalMode {
     $script:TerminalMode = $Mode
     switch ($Mode) {
         'Collapsed' { $script:TerminalRow.Height = New-Object Windows.GridLength(48) }
-        'Expanded'  { $script:TerminalRow.Height = New-Object Windows.GridLength(380) }
+        'Expanded'  { $script:TerminalRow.Height = New-Object Windows.GridLength(1.6, ([Windows.GridUnitType]::Star)) }
         default     { $script:TerminalRow.Height = New-Object Windows.GridLength(170) }
     }
     $script:TerminalOutput.Visibility = if ($Mode -eq 'Collapsed') { 'Collapsed' } else { 'Visible' }
@@ -2153,7 +2234,7 @@ function New-Card {
     if (-not $Item.CanQueue) { $badgeParts += 'RUN ALONE' }
     if (-not $badgeParts) { $badgeParts += 'STANDARD' }
     $badge = New-Object Windows.Controls.TextBlock
-    $badge.Text = ($badgeParts -join '  •  ')
+    $badge.Text = ($badgeParts -join "  $([char]0x2022)  ")
     $badge.FontSize = 9
     $badge.FontWeight = 'Bold'
     $badge.Foreground = if ($Item.RequiresAdmin) { '#F59E0B' } else { '#22C55E' }
@@ -2246,7 +2327,7 @@ function Start-SelectedItems {
         return
     }
 
-    $names = @($items | ForEach-Object { '• ' + $_.Name }) -join [Environment]::NewLine
+    $names = @($items | ForEach-Object { "$([char]0x2022) " + $_.Name }) -join [Environment]::NewLine
     $message = "The selected scripts will run one at a time in this order:`n`n$names`n`nScripts that need administrator rights may show a UAC prompt."
     if (-not (Show-ScriptBoxDialog -Title "Run $($items.Count) selected scripts?" -Message $message -Buttons YesNo -Kind Warning)) {
         Add-TerminalLine 'Selected script queue cancelled.'
@@ -2376,7 +2457,7 @@ function Select-Section {
 }
 
 $sections = @('Applications', 'Scripts', 'Network Tools', 'Diagnostics', 'System Info')
-$sectionIcons = @{ Applications='▣'; Scripts='⌘'; 'Network Tools'='◔'; Diagnostics='◎'; 'System Info'='⚙' }
+$sectionIcons = @{ Applications=[string][char]0x25A3; Scripts=[string][char]0x2318; 'Network Tools'=[string][char]0x25D4; Diagnostics=[string][char]0x25CE; 'System Info'=[string][char]0x2699 }
 $sectionShortcuts = @{ Applications='Ctrl+1'; Scripts='Ctrl+2'; 'Network Tools'='Ctrl+3'; Diagnostics='Ctrl+4'; 'System Info'='Ctrl+5' }
 foreach ($sectionName in $sections) {
     $sectionButton = New-Object Windows.Controls.Button
@@ -2466,6 +2547,10 @@ $script:SettingsButton.Add_Click({
     try { Start-Process -FilePath 'ms-settings:' -ErrorAction Stop }
     catch { Add-TerminalLine "Could not open Settings: $($_.Exception.Message)" }
 })
+$script:TaskManagerButton.Add_Click({
+    try { Start-Process -FilePath 'taskmgr.exe' -ErrorAction Stop }
+    catch { Add-TerminalLine "Task Manager could not be opened: $($_.Exception.Message)" }
+})
 $script:OpenTerminalButton.Add_Click({
     try { Start-Process -FilePath 'wt.exe' -ErrorAction Stop }
     catch {
@@ -2476,6 +2561,13 @@ $script:OpenTerminalButton.Add_Click({
 $script:ClearTerminalButton.Add_Click({
     $script:TerminalOutput.Clear()
     Add-TerminalLine 'Terminal cleared. ScriptBox is ready.'
+})
+$script:CopyTerminalButton.Add_Click({
+    try {
+        [Windows.Clipboard]::SetText($script:TerminalOutput.Text)
+        Add-TerminalLine 'Terminal output copied to the clipboard.'
+    }
+    catch { Add-TerminalLine "Terminal output could not be copied: $($_.Exception.Message)" }
 })
 
 $script:Window.Add_PreviewKeyDown({
@@ -2601,9 +2693,9 @@ if ($localIcon) {
     } catch { }
 }
 
-$script:PrivilegeLabel.Text = if ($script:IsAdministrator) { '● RUNNING AS ADMIN' } else { '● STANDARD SESSION' }
+$script:PrivilegeLabel.Text = if ($script:IsAdministrator) { "$([char]0x25CF) RUNNING AS ADMIN" } else { "$([char]0x25CF) STANDARD SESSION" }
 $script:PrivilegeLabel.Foreground = if ($script:IsAdministrator) { '#22C55E' } else { '#F59E0B' }
-$script:VersionLabel.Text = "PORTABLE  •  v$($script:Version)"
+$script:VersionLabel.Text = "PORTABLE  $([char]0x2022)  v$($script:Version)"
 $script:ElevateButton.Visibility = if ($script:IsAdministrator) { 'Collapsed' } else { 'Visible' }
 $script:Window.Title = "ScriptBox $($script:Version)"
 
@@ -2666,6 +2758,23 @@ if ($env:SCRIPTBOX_TEST_MODE -eq '1') {
         throw 'Application batch-selection validation failed.'
     }
     Clear-SelectedApplications
+    Select-Section -Section 'Network Tools'
+    if ($script:ActiveSection -ne 'Network Tools' -or
+        $script:CardsHost.Children.Count -ne 4 -or
+        $script:RunButtons.Count -ne 0 -or
+        $script:ResultsLabel.Text -match '(?i)shortcut') {
+        throw 'Network Tools section validation failed; expected exactly Ping, Traceroute, Latency Test, and Quick Network Actions cards with no Windows Shortcuts card.'
+    }
+    if ($null -eq $script:TaskManagerButton -or [string]$script:TaskManagerButton.Content -notmatch 'Task Manager') {
+        throw 'Task Manager sidebar shortcut validation failed.'
+    }
+    Select-Section -Section 'System Info'
+    if ($script:ActiveSection -ne 'System Info' -or
+        $script:CardsHost.Children.Count -ne 6 -or
+        $null -ne $script:SystemInfoGather -or
+        -not $script:SystemInfoLoaded) {
+        throw 'System Info synchronous test-mode gather validation failed; expected five snapshot cards plus the refresh card.'
+    }
     Select-Section -Section 'Scripts'
     if ($script:ActiveSection -ne 'Scripts' -or
         $script:ScriptTabsPanel.Visibility -ne 'Visible' -or

@@ -32,6 +32,16 @@ if ($parseFailures.Count -gt 0) {
     throw "PowerShell parse failures:`n$($parseFailures -join "`n")"
 }
 
+$launcherBytes = [System.IO.File]::ReadAllBytes($launcherPath)
+if ($launcherBytes.Length -ge 3 -and $launcherBytes[0] -eq 0xEF -and $launcherBytes[1] -eq 0xBB -and $launcherBytes[2] -eq 0xBF) {
+    throw 'ScriptBox.ps1 must not start with a UTF-8 byte order mark; irm | iex fails on Windows PowerShell 5.1.'
+}
+for ($byteIndex = 0; $byteIndex -lt $launcherBytes.Length; $byteIndex++) {
+    if ($launcherBytes[$byteIndex] -gt 0x7F) {
+        throw "ScriptBox.ps1 must stay pure ASCII (non-ASCII byte at offset $byteIndex); BOM-less non-ASCII breaks Windows PowerShell 5.1 parsing."
+    }
+}
+
 $resetTokens = $null
 $resetErrors = $null
 $resetAst = [System.Management.Automation.Language.Parser]::ParseFile($resetPath, [ref]$resetTokens, [ref]$resetErrors)
