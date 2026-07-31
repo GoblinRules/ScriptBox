@@ -138,7 +138,10 @@ foreach ($requiredHpG3G5Text in @(
     'Set-NetAdapterPowerManagement @powerParameters',
     '/deviceenablewake',
     'ALL HP BIOS SETTINGS AFTER CONFIGURATION',
-    'ConvertTo-ColonMac'
+    'ConvertTo-ColonMac',
+    '$WorkflowState.Report',
+    '$WorkflowState.HadWarnings',
+    'Error:`r`n{0}'
 )) {
     if ($hpG3G5WolKvmSource -notmatch [regex]::Escape($requiredHpG3G5Text)) {
         throw "The HP G3/G5 Mini workflow is missing required behavior: $requiredHpG3G5Text"
@@ -146,6 +149,9 @@ foreach ($requiredHpG3G5Text in @(
 }
 if ($hpG3G5WolKvmSource -match '\[\(\]\(%28\)|\[\{\]\(%7B\)|\[powerParameters\]\(powerParameters\)') {
     throw 'The HP G3/G5 Mini workflow still contains URL/Markdown-corrupted PowerShell tokens.'
+}
+if ($hpG3G5WolKvmSource -match '\$script:(?:Report|HadWarnings|HpBiosSettings)') {
+    throw 'The HP G3/G5 Mini workflow must not use runner-level script scope for its mutable workflow state.'
 }
 foreach ($supportedModel in @(
     'HP EliteDesk 800 G3 Desktop Mini',

@@ -124,8 +124,11 @@ catch {
 $TimeStamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 $ReportFolder = Join-Path $env:ProgramData 'RevHooks\HP-WOL-KVM'
 $ReportPath = Join-Path $ReportFolder "HP-WOL-KVM-$env:COMPUTERNAME-$TimeStamp.txt"
-$Report = New-Object System.Collections.Generic.List[string]
-$HadWarnings = $false
+$WorkflowState = [pscustomobject]@{
+    Report         = New-Object System.Collections.Generic.List[string]
+    HadWarnings    = $false
+    HpBiosSettings = @()
+}
 $FatalError = $false
 $FatalException = $null
 $MacForWol = $null
@@ -137,7 +140,7 @@ function Add-ReportLine {
         [string]$Text = ''
     )
 
-    $script:Report.Add($Text)
+    [void]$WorkflowState.Report.Add($Text)
     Write-Host $Text
 }
 
@@ -200,7 +203,7 @@ try {
     Add-ReportLine "System UUID   : $($ComputerProduct.UUID)"
 
     $BiosNamespace = 'root\HP\InstrumentedBIOS'
-    $script:HpBiosSettings = @(
+    $WorkflowState.HpBiosSettings = @(
         Get-CimInstance -Namespace $BiosNamespace -ClassName HP_BIOSSetting
     )
     $HpBiosInterface = Get-CimInstance `
@@ -224,13 +227,13 @@ try {
             [string]$DesiredValue
         )
 
-        $setting = $script:HpBiosSettings |
+        $setting = $WorkflowState.HpBiosSettings |
             Where-Object Name -EQ $Name |
             Select-Object -First 1
 
         if (-not $setting) {
             Add-ReportLine "[WARNING] BIOS setting is unavailable: $Name"
-            $script:HadWarnings = $true
+            $WorkflowState.HadWarnings = $true
             return
         }
 
@@ -258,10 +261,10 @@ try {
                 }
             }
 
-            $script:HpBiosSettings = @(
+            $WorkflowState.HpBiosSettings = @(
                 Get-CimInstance -Namespace $BiosNamespace -ClassName HP_BIOSSetting
             )
-            $afterSetting = $script:HpBiosSettings |
+            $afterSetting = $WorkflowState.HpBiosSettings |
                 Where-Object Name -EQ $Name |
                 Select-Object -First 1
             $after = if ($afterSetting) {
@@ -291,12 +294,12 @@ try {
             }
             else {
                 Add-ReportLine "[FAILED] $Name : requested '$DesiredValue'; current '$after' ($description)"
-                $script:HadWarnings = $true
+                $WorkflowState.HadWarnings = $true
             }
         }
         catch {
             Add-ReportLine "[FAILED] $Name : $($_.Exception.Message)"
-            $script:HadWarnings = $true
+            $WorkflowState.HadWarnings = $true
         }
     }
 
@@ -338,7 +341,7 @@ try {
     }
     else {
         Add-ReportLine '[FAILED] Windows Fast Startup could not be disabled.'
-        $HadWarnings = $true
+        $WorkflowState.HadWarnings = $true
     }
 
     Add-Section 'WIRED ETHERNET ADAPTERS'
@@ -356,7 +359,7 @@ try {
 
     if ($WiredAdapters.Count -eq 0) {
         Add-ReportLine '[FAILED] No physical wired Ethernet adapter was found.'
-        $HadWarnings = $true
+        $WorkflowState.HadWarnings = $true
     }
 
     foreach ($adapter in $WiredAdapters) {
@@ -396,12 +399,12 @@ try {
             }
             else {
                 Add-ReportLine '[WARNING] Adapter exposes no configurable WOL power-management options.'
-                $HadWarnings = $true
+                $WorkflowState.HadWarnings = $true
             }
         }
         catch {
             Add-ReportLine "[WARNING] Adapter power-management cmdlet: $($_.Exception.Message)"
-            $HadWarnings = $true
+            $WorkflowState.HadWarnings = $true
         }
 
         try {
@@ -464,7 +467,7 @@ try {
         }
         catch {
             Add-ReportLine "[WARNING] Advanced WOL properties: $($_.Exception.Message)"
-            $HadWarnings = $true
+            $WorkflowState.HadWarnings = $true
         }
 
         $PowerCfgSucceeded = $false
@@ -499,7 +502,7 @@ try {
             if ($powerCfgOutput.Count -gt 0) {
                 Add-ReportLine "          $($powerCfgOutput -join ' ')"
             }
-            $HadWarnings = $true
+            $WorkflowState.HadWarnings = $true
         }
     }
 
@@ -524,7 +527,7 @@ try {
         }
         catch {
             Add-ReportLine '[WARNING] The MAC address could not be copied to the clipboard.'
-            $HadWarnings = $true
+            $WorkflowState.HadWarnings = $true
         }
     }
 
@@ -592,7 +595,7 @@ try {
     }
 
     Add-Section 'FINAL STATUS'
-    if ($HadWarnings) {
+    if ($WorkflowState.HadWarnings) {
         Add-ReportLine 'Completed with one or more warnings.'
     }
     else {
@@ -611,7 +614,7 @@ finally {
     try {
         [IO.File]::WriteAllLines(
             $ReportPath,
-            $Report,
+            $WorkflowState.Report,
             (New-Object Text.UTF8Encoding($false))
         )
     }
@@ -645,10 +648,10 @@ finally {
     if ($FatalError) {
         Show-ResultPopup `
             -Title 'HP WOL/KVM setup failed' `
-            -Message "The script stopped before completing.`r`n`r`nSee the report for details:`r`n$DisplayedReportPath" `
+            -Message ("The script stopped before completing.`r`n`r`nError:`r`n{0}`r`n`r`nReport:`r`n{1}" -f $FatalException.Message, $DisplayedReportPath) `
             -Icon Error
     }
-    elseif ($HadWarnings) {
+    elseif ($WorkflowState.HadWarnings) {
         $MacText = if ($MacForWol) {
             "Wake-on-LAN MAC:`r`n$MacForWol`r`n`r`n"
         }
@@ -672,7 +675,7 @@ if ($FatalError) {
     Write-Host "[ERROR] $($FatalException.Message)"
     throw $FatalException
 }
-elseif ($HadWarnings) {
+elseif ($WorkflowState.HadWarnings) {
     Write-Host "[WARNING] HP G3/G5 Mini WOL/KVM setup completed with warnings. Report: $ReportPath"
 }
 else {
