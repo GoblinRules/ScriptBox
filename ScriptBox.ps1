@@ -11,7 +11,7 @@ Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 
 $script:AppName = 'ScriptBox'
-$script:Version = '3.3.1'
+$script:Version = '3.3.2'
 $script:Repository = 'https://github.com/GoblinRules/ScriptBox'
 $script:SelfSource = 'https://raw.githubusercontent.com/GoblinRules/ScriptBox/main/ScriptBox.ps1'
 $script:IconSource = 'https://raw.githubusercontent.com/GoblinRules/ScriptBox/main/assets/icon.png'
@@ -24,6 +24,9 @@ $script:SystemInfoLoaded = $false
 $script:SystemInfoSnapshot = $null
 $script:SystemInfoGather = $null
 $script:ApplicationStatusCache = @{}
+$script:ApplicationStatusPills = @{}
+$script:ApplicationStatusGather = $null
+$script:IconGather = $null
 $script:TerminalMode = 'Normal'
 $script:SectionButtons = @{}
 $script:RunState = $null
@@ -1418,6 +1421,81 @@ function Get-ApplicationStatus {
     return $status
 }
 
+function Set-ApplicationStatusPill {
+    param(
+        [Parameter(Mandatory)]$Pill,
+        [Parameter(Mandatory)]$Label,
+        [Parameter(Mandatory)][string]$Status
+    )
+
+    $Pill.Background = if ($Status -in @('INSTALLED','AVAILABLE')) { '#1A22C55E' } else { '#0AFFFFFF' }
+    $Label.Text = if ($Status -eq 'INSTALLED') { "$([char]0x2713) INSTALLED" } elseif ($Status -eq 'AVAILABLE') { "$([char]0x2713) AVAILABLE" } else { "$([char]0x25CB) NOT INSTALLED" }
+    $Label.Foreground = if ($Status -in @('INSTALLED','AVAILABLE')) { '#22C55E' } else { $script:Window.Resources['MutedText'] }
+}
+
+function Start-ApplicationStatusGather {
+    # Resolves every application status in an in-process background runspace so
+    # the file, service, and CIM probes never freeze the UI thread. The payload
+    # reuses the literal body of Get-ApplicationStatus with a runspace-local
+    # status cache, receives plain catalog data, and returns Id -> status.
+    $statusScript = "param(`$applications)`n" +
+        "try {`n" +
+        "`$script:ApplicationStatusCache = @{}`n" +
+        "function Get-ApplicationStatus {`n" + ${function:Get-ApplicationStatus}.ToString() + "`n}`n" +
+        "`$statuses = @{}`n" +
+        "foreach (`$application in `$applications) { `$statuses[[string]`$application.Id] = [string](Get-ApplicationStatus -Application `$application) }`n" +
+        "`$statuses`n" +
+        "}`ncatch { @{ StatusGatherError = [string]`$_.Exception.Message } }"
+    $gatherShell = [powershell]::Create()
+    [void]$gatherShell.AddScript($statusScript).AddArgument(@($script:ApplicationLinks))
+    $gatherTimer = New-Object Windows.Threading.DispatcherTimer
+    $gatherTimer.Interval = [TimeSpan]::FromMilliseconds(250)
+    $script:ApplicationStatusGather = @{
+        PowerShell = $gatherShell
+        Handle     = $gatherShell.BeginInvoke()
+        Timer      = $gatherTimer
+    }
+    $gatherTimer.Add_Tick({
+        $gather = $script:ApplicationStatusGather
+        if (-not $gather) { return }
+        if (-not $gather.Handle.IsCompleted) { return }
+        $gather.Timer.Stop()
+        $script:ApplicationStatusGather = $null
+        $statuses = $null
+        $gatherError = $null
+        try {
+            $results = $gather.PowerShell.EndInvoke($gather.Handle)
+            $statuses = @($results | Where-Object { $_ -is [Collections.IDictionary] }) | Select-Object -Last 1
+        }
+        catch { $gatherError = $_.Exception.Message }
+        finally { $gather.PowerShell.Dispose() }
+        if (-not $gatherError -and $null -ne $statuses -and $statuses.Contains('StatusGatherError')) {
+            $gatherError = [string]$statuses['StatusGatherError']
+        }
+        if (-not $gatherError -and $null -eq $statuses) {
+            $gatherError = 'The background status check returned no data.'
+        }
+        if ($gatherError) {
+            # Leave the pills in their CHECKING state and report the failure once.
+            Add-TerminalLine "Application statuses could not be checked: $gatherError"
+            return
+        }
+        foreach ($key in @($statuses.Keys)) {
+            $script:ApplicationStatusCache[[string]$key] = [string]$statuses[$key]
+        }
+        if ($script:ActiveSection -ne 'Applications') { return }
+        foreach ($id in @($script:ApplicationStatusPills.Keys)) {
+            if (-not $script:ApplicationStatusCache.ContainsKey($id)) { continue }
+            $pillEntry = $script:ApplicationStatusPills[$id]
+            try {
+                Set-ApplicationStatusPill -Pill $pillEntry.Pill -Label $pillEntry.Label -Status ([string]$script:ApplicationStatusCache[$id])
+            }
+            catch { }
+        }
+    })
+    $gatherTimer.Start()
+}
+
 function ConvertTo-SingleQuotedPowerShellLiteral {
     param([AllowEmptyString()][string]$Value)
     return "'" + $Value.Replace("'", "''") + "'"
@@ -1628,19 +1706,26 @@ function New-ApplicationCard {
     $name.VerticalAlignment = 'Center'
     $name.TextTrimming = 'CharacterEllipsis'
 
-    $applicationStatus = Get-ApplicationStatus -Application $Application
     $statusPill = New-Object Windows.Controls.Border
-    $statusPill.Background = if ($applicationStatus -in @('INSTALLED','AVAILABLE')) { '#1A22C55E' } else { '#0AFFFFFF' }
     $statusPill.CornerRadius = '20'
     $statusPill.Padding = '10,4'
     $statusPill.Margin = '7,0,7,0'
     [Windows.Controls.Grid]::SetColumn($statusPill, 1)
     $statusLabel = New-Object Windows.Controls.TextBlock
-    $statusLabel.Text = if ($applicationStatus -eq 'INSTALLED') { "$([char]0x2713) INSTALLED" } elseif ($applicationStatus -eq 'AVAILABLE') { "$([char]0x2713) AVAILABLE" } else { "$([char]0x25CB) NOT INSTALLED" }
     $statusLabel.FontSize = 8
     $statusLabel.FontWeight = 'Bold'
-    $statusLabel.Foreground = if ($applicationStatus -in @('INSTALLED','AVAILABLE')) { '#22C55E' } else { $script:Window.Resources['MutedText'] }
     $statusPill.Child = $statusLabel
+    if ($env:SCRIPTBOX_TEST_MODE -eq '1' -or $script:ApplicationStatusCache.ContainsKey($Application.Id)) {
+        # Cached (or synchronous test-mode) statuses render immediately.
+        Set-ApplicationStatusPill -Pill $statusPill -Label $statusLabel -Status (Get-ApplicationStatus -Application $Application)
+    } else {
+        # Unknown statuses render as CHECKING; the background gather started by
+        # Render-Applications resolves them without blocking the UI thread.
+        $statusPill.Background = '#0AFFFFFF'
+        $statusLabel.Text = "$([char]0x25CC) CHECKING..."
+        $statusLabel.Foreground = $script:Window.Resources['MutedText']
+    }
+    $script:ApplicationStatusPills[$Application.Id] = @{ Pill = $statusPill; Label = $statusLabel }
 
     $selectBox = New-Object Windows.Controls.CheckBox
     $selectBox.Width = 20
@@ -1718,6 +1803,7 @@ function Render-Applications {
     $script:RunButtons.Clear()
     $script:SelectionControls.Clear()
     $script:ApplicationSelectionControls.Clear()
+    $script:ApplicationStatusPills = @{}
     $query = $script:SearchBox.Text.Trim()
     $applications = @($script:ApplicationLinks | Where-Object {
         [string]::IsNullOrWhiteSpace($query) -or
@@ -1731,6 +1817,14 @@ function Render-Applications {
     $script:ResultsLabel.Text = "$($applications.Count) application card(s). ScriptBox stays portable; downloads and installs run only when selected."
     Update-SelectionControls
     if ($script:RunState -or $script:IsQueueRunning) { Set-RunButtonsEnabled -Enabled $false }
+    if ($env:SCRIPTBOX_TEST_MODE -ne '1') {
+        # Resolve any uncached statuses off the UI thread. If a gather is
+        # already in flight, its completion tick updates the pending pills.
+        $pending = @($script:ApplicationLinks | Where-Object { -not $script:ApplicationStatusCache.ContainsKey($_.Id) })
+        if ($pending.Count -gt 0 -and $null -eq $script:ApplicationStatusGather) {
+            Start-ApplicationStatusGather
+        }
+    }
 }
 
 function New-FeatureCard {
@@ -2667,19 +2761,10 @@ $script:OutputTimer.Add_Tick({
     }
 })
 
-$localIcon = if ($PSScriptRoot -and (Test-Path -LiteralPath (Join-Path $PSScriptRoot 'assets\icon.png'))) {
-    Join-Path $PSScriptRoot 'assets\icon.png'
-} else {
-    $downloadedIcon = Join-Path $script:TempRoot 'icon.png'
+function Set-ScriptBoxWindowIconFromFile {
+    param([Parameter(Mandatory)][string]$Path)
     try {
-        Invoke-WebRequest -UseBasicParsing -Uri $script:IconSource -OutFile $downloadedIcon -TimeoutSec 10
-        $downloadedIcon
-    } catch { $null }
-}
-
-if ($localIcon) {
-    try {
-        $iconBytes = [IO.File]::ReadAllBytes($localIcon)
+        $iconBytes = [IO.File]::ReadAllBytes($Path)
         $iconStream = New-Object IO.MemoryStream(,$iconBytes)
         $bitmap = New-Object Windows.Media.Imaging.BitmapImage
         $bitmap.BeginInit()
@@ -2691,6 +2776,46 @@ if ($localIcon) {
         $script:Window.Icon = $bitmap
         $script:AppIcon.Source = $bitmap
     } catch { }
+}
+
+if ($PSScriptRoot -and (Test-Path -LiteralPath (Join-Path $PSScriptRoot 'assets\icon.png'))) {
+    Set-ScriptBoxWindowIconFromFile -Path (Join-Path $PSScriptRoot 'assets\icon.png')
+} else {
+    # Download the icon in a background runspace so an irm | iex launch never
+    # blocks startup on the network; the window shows no icon until it lands.
+    $downloadedIcon = Join-Path $script:TempRoot 'icon.png'
+    $iconScript = "param(`$uri, `$destination)`n" +
+        "try {`n" +
+        "Invoke-WebRequest -UseBasicParsing -Uri `$uri -OutFile `$destination -TimeoutSec 10`n" +
+        "`$destination`n" +
+        "}`ncatch { `$null }"
+    $iconShell = [powershell]::Create()
+    [void]$iconShell.AddScript($iconScript).AddArgument($script:IconSource).AddArgument($downloadedIcon)
+    $iconTimer = New-Object Windows.Threading.DispatcherTimer
+    $iconTimer.Interval = [TimeSpan]::FromMilliseconds(250)
+    $script:IconGather = @{
+        PowerShell = $iconShell
+        Handle     = $iconShell.BeginInvoke()
+        Timer      = $iconTimer
+    }
+    $iconTimer.Add_Tick({
+        $gather = $script:IconGather
+        if (-not $gather) { return }
+        if (-not $gather.Handle.IsCompleted) { return }
+        $gather.Timer.Stop()
+        $script:IconGather = $null
+        $iconPath = $null
+        try {
+            $results = $gather.PowerShell.EndInvoke($gather.Handle)
+            $iconPath = @($results | Where-Object { $_ -is [string] -and $_ }) | Select-Object -Last 1
+        }
+        catch { $iconPath = $null }
+        finally { $gather.PowerShell.Dispose() }
+        if ($iconPath -and (Test-Path -LiteralPath $iconPath)) {
+            Set-ScriptBoxWindowIconFromFile -Path $iconPath
+        }
+    })
+    $iconTimer.Start()
 }
 
 $script:PrivilegeLabel.Text = if ($script:IsAdministrator) { "$([char]0x25CF) RUNNING AS ADMIN" } else { "$([char]0x25CF) STANDARD SESSION" }
