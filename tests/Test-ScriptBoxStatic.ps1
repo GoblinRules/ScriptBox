@@ -13,7 +13,7 @@ $hideShutdownPath = Join-Path $scriptsPath 'Hide-ShutdownOptions.ps1'
 $repairShellPath = Join-Path $scriptsPath 'Repair-PowerMenuAndSystemTray.ps1'
 $usbDevicesPath = Join-Path $scriptsPath 'Show-ConnectedUSBDevices.ps1'
 $wolWatcherPath = Join-Path $scriptsPath 'Watch-WakeOnLanPackets.ps1'
-$hpG5WolKvmPath = Join-Path $scriptsPath 'Configure-HPEliteDesk800G5WolKvm.ps1'
+$hpG3G5WolKvmPath = Join-Path $scriptsPath 'Configure-HPEliteDesk800G5WolKvm.ps1'
 $files = @($launcherPath) + @(Get-ChildItem -LiteralPath $scriptsPath -Filter '*.ps1' -File | Select-Object -ExpandProperty FullName)
 
 $parseFailures = New-Object System.Collections.Generic.List[string]
@@ -126,9 +126,11 @@ if ($wolWatcherSource -notmatch 'DispatcherTimer' -or $wolWatcherSource -notmatc
     throw 'The Wake-on-LAN watcher must poll real-time output in a popup.'
 }
 
-$hpG5WolKvmSource = Get-Content -Raw -LiteralPath $hpG5WolKvmPath
-foreach ($requiredHpG5Text in @(
-    "ExpectedModel = 'HP EliteDesk 800 G5 Desktop Mini'",
+$hpG3G5WolKvmSource = Get-Content -Raw -LiteralPath $hpG3G5WolKvmPath
+$supportedHpMiniPattern = '^HP\s+EliteDesk\s+800\b(?=.*\bG(?:3|5)\b)(?=.*\b(?:Desktop\s+Mini|DM)\b).*$'
+foreach ($requiredHpG3G5Text in @(
+    $supportedHpMiniPattern,
+    'including 35W and 65W variants',
     "'USB Legacy Port Charging'",
     "'Wake On LAN'",
     "'S5 Maximum Power Savings'",
@@ -138,12 +140,33 @@ foreach ($requiredHpG5Text in @(
     'ALL HP BIOS SETTINGS AFTER CONFIGURATION',
     'ConvertTo-ColonMac'
 )) {
-    if ($hpG5WolKvmSource -notmatch [regex]::Escape($requiredHpG5Text)) {
-        throw "The HP G5 Mini workflow is missing required behavior: $requiredHpG5Text"
+    if ($hpG3G5WolKvmSource -notmatch [regex]::Escape($requiredHpG3G5Text)) {
+        throw "The HP G3/G5 Mini workflow is missing required behavior: $requiredHpG3G5Text"
     }
 }
-if ($hpG5WolKvmSource -match '\[\(\]\(%28\)|\[\{\]\(%7B\)|\[powerParameters\]\(powerParameters\)') {
-    throw 'The HP G5 Mini workflow still contains URL/Markdown-corrupted PowerShell tokens.'
+if ($hpG3G5WolKvmSource -match '\[\(\]\(%28\)|\[\{\]\(%7B\)|\[powerParameters\]\(powerParameters\)') {
+    throw 'The HP G3/G5 Mini workflow still contains URL/Markdown-corrupted PowerShell tokens.'
+}
+foreach ($supportedModel in @(
+    'HP EliteDesk 800 G3 Desktop Mini',
+    'HP EliteDesk 800 35W G3 Desktop Mini PC',
+    'HP EliteDesk 800 G3 DM 35W',
+    'HP EliteDesk 800 G5 Desktop Mini',
+    'HP EliteDesk 800 65W G5 Desktop Mini PC'
+)) {
+    if ($supportedModel -notmatch $supportedHpMiniPattern) {
+        throw "The HP G3/G5 Mini model gate rejected a supported model: $supportedModel"
+    }
+}
+foreach ($unsupportedModel in @(
+    'HP EliteDesk 800 G4 Desktop Mini',
+    'HP EliteDesk 800 G3 Small Form Factor',
+    'HP ProDesk 600 G3 Desktop Mini',
+    'HP EliteDesk 705 G3 Desktop Mini'
+)) {
+    if ($unsupportedModel -match $supportedHpMiniPattern) {
+        throw "The HP G3/G5 Mini model gate accepted an unsupported model: $unsupportedModel"
+    }
 }
 
 $methodCollectionType = [Microsoft.Management.Infrastructure.CimClass].GetProperty('CimClassMethods').PropertyType

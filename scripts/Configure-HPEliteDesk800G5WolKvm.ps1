@@ -1,14 +1,19 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    Configures an HP EliteDesk 800 G5 Desktop Mini for JetKVM and Wake-on-LAN.
+    Configures an HP EliteDesk 800 G3 or G5 Desktop Mini for JetKVM and
+    Wake-on-LAN.
 
 .DESCRIPTION
-    Verifies the exact HP model before making changes, configures the BIOS
-    settings exported from that model, disables Windows Fast Startup, enables
-    supported Wake-on-LAN settings on physical wired adapters, arms the
-    selected adapter with Powercfg, exports a detailed report, and shows the
-    selected MAC address in colon notation.
+    Verifies the supported HP model family before making changes, configures
+    the available BIOS settings by their exact HP names, disables Windows Fast
+    Startup, enables supported Wake-on-LAN settings on physical wired
+    adapters, arms the selected adapter with Powercfg, exports a detailed
+    report, and shows the selected MAC address in colon notation.
+
+    Supported models are HP EliteDesk 800 G3 and G5 Desktop Mini systems,
+    including their 35W and 65W variants. A BIOS setting that is not exposed by
+    a particular model is reported as a warning and is not guessed or forced.
 
     The script does not restart the computer or network adapters. Restart the
     computer once after completion so pending BIOS and driver settings apply.
@@ -16,15 +21,11 @@
 .PARAMETER BiosPassword
     Optional HP BIOS administrator password. Leave blank when no BIOS password
     is configured.
-
-.PARAMETER ExpectedModel
-    Exact model text required before any configuration changes are attempted.
 #>
 
 [CmdletBinding()]
 param(
-    [string]$BiosPassword = '',
-    [string]$ExpectedModel = 'HP EliteDesk 800 G5 Desktop Mini'
+    [string]$BiosPassword = ''
 )
 
 Set-StrictMode -Version 2.0
@@ -101,19 +102,19 @@ try {
     $ComputerBios = Get-CimInstance -ClassName Win32_BIOS
     $ComputerProduct = Get-CimInstance -ClassName Win32_ComputerSystemProduct
     $IsHp = [string]$ComputerSystem.Manufacturer -match '^(HP|Hewlett-Packard)'
-    $IsExpectedModel = [string]::Equals(
-        ([string]$ComputerSystem.Model).Trim(),
-        $ExpectedModel.Trim(),
-        [StringComparison]::OrdinalIgnoreCase
-    )
+    # HP uses both "Desktop Mini" and "DM" in G3/G5 model strings, and the
+    # official product names can include a 35W or 65W marker. Require the exact
+    # EliteDesk 800 family, a supported generation, and the Mini form factor.
+    $SupportedModelPattern = '^HP\s+EliteDesk\s+800\b(?=.*\bG(?:3|5)\b)(?=.*\b(?:Desktop\s+Mini|DM)\b).*$'
+    $IsSupportedModel = ([string]$ComputerSystem.Model).Trim() -match $SupportedModelPattern
 
-    if (-not $IsHp -or -not $IsExpectedModel) {
-        throw "This script is restricted to '$ExpectedModel'. Detected manufacturer/model: '$($ComputerSystem.Manufacturer) $($ComputerSystem.Model)'. No changes were made."
+    if (-not $IsHp -or -not $IsSupportedModel) {
+        throw "This script is restricted to HP EliteDesk 800 G3 or G5 Desktop Mini systems (including 35W and 65W variants). Detected manufacturer/model: '$($ComputerSystem.Manufacturer) $($ComputerSystem.Model)'. No changes were made."
     }
 }
 catch {
     Show-ResultPopup `
-        -Title 'HP G5 Mini WOL/KVM preflight failed' `
+        -Title 'HP G3/G5 Mini WOL/KVM preflight failed' `
         -Message $_.Exception.Message `
         -Icon Error
     Write-Host "[ERROR] $($_.Exception.Message)"
@@ -299,8 +300,9 @@ try {
         }
     }
 
-    # These names and values come from the EliteDesk 800 G5 Desktop Mini BIOS
-    # export supplied for this workflow.
+    # These exact HP names and values come from the supplied EliteDesk 800 G5
+    # Desktop Mini BIOS export. G3 settings that are unavailable are recorded
+    # as warnings by Set-HpRequiredBiosSetting and are never guessed or forced.
     $RequiredBiosSettings = [ordered]@{
         'Fast Boot'                            = 'Disable'
         'Front USB Ports'                      = 'Enable'
@@ -671,8 +673,8 @@ if ($FatalError) {
     throw $FatalException
 }
 elseif ($HadWarnings) {
-    Write-Host "[WARNING] HP G5 Mini WOL/KVM setup completed with warnings. Report: $ReportPath"
+    Write-Host "[WARNING] HP G3/G5 Mini WOL/KVM setup completed with warnings. Report: $ReportPath"
 }
 else {
-    Write-Host "[SUCCESS] HP G5 Mini WOL/KVM setup completed. Report: $ReportPath"
+    Write-Host "[SUCCESS] HP G3/G5 Mini WOL/KVM setup completed. Report: $ReportPath"
 }
