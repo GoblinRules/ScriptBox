@@ -20,6 +20,7 @@ $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 $LogRoot = 'C:\ProgramData\ScriptBox\BIOS'
 $LogFile = Join-Path $LogRoot ("HP-BIOS-{0:yyyyMMdd-HHmmss}.log" -f (Get-Date))
+$script:PSGalleryOriginalState = $null
 New-Item -Path $LogRoot -ItemType Directory -Force | Out-Null
 
 function Write-Log {
@@ -55,6 +56,12 @@ function Initialize-PowerShellGalleryClient {
     }
 
     $gallery = Get-PSRepository -Name PSGallery -ErrorAction SilentlyContinue
+    if ($null -eq $script:PSGalleryOriginalState) {
+        $script:PSGalleryOriginalState = [pscustomobject]@{
+            WasRegistered      = $null -ne $gallery
+            InstallationPolicy = if ($gallery) { [string]$gallery.InstallationPolicy } else { $null }
+        }
+    }
     if (-not $gallery) {
         Write-Log 'Restoring the default PowerShell Gallery registration.'
         Register-PSRepository -Default
@@ -62,6 +69,16 @@ function Initialize-PowerShellGalleryClient {
     }
     if ($gallery.InstallationPolicy -ne 'Trusted') {
         Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+    }
+
+    $packageManagementVersion = Get-HighestModuleVersion -Name PackageManagement
+    if ($packageManagementVersion -lt [version]'1.4.8.1') {
+        Write-Log "PackageManagement $packageManagementVersion is too old for reliable HP module dependency resolution. Installing PackageManagement 1.4.8.1 or later."
+        Install-Module -Name PackageManagement -MinimumVersion 1.4.8.1 -Repository PSGallery `
+            -Scope AllUsers -Force -AllowClobber
+    }
+    else {
+        Write-Log "Compatible PackageManagement $packageManagementVersion is available."
     }
 
     $powerShellGetVersion = Get-HighestModuleVersion -Name PowerShellGet
@@ -73,9 +90,33 @@ function Initialize-PowerShellGalleryClient {
         Write-Log "Compatible PowerShellGet $powerShellGetVersion is available."
     }
 
-    $installedVersion = Get-HighestModuleVersion -Name PowerShellGet
-    if ($installedVersion -lt [version]'2.2.5') {
-        throw "PowerShellGet 2.2.5 was not installed successfully. Highest available version: $installedVersion"
+    $installedPackageManagement = Get-HighestModuleVersion -Name PackageManagement
+    $installedPowerShellGet = Get-HighestModuleVersion -Name PowerShellGet
+    if ($installedPackageManagement -lt [version]'1.4.8.1') {
+        throw "PackageManagement 1.4.8.1 or later was not installed successfully. Highest available version: $installedPackageManagement"
+    }
+    if ($installedPowerShellGet -lt [version]'2.2.5') {
+        throw "PowerShellGet 2.2.5 was not installed successfully. Highest available version: $installedPowerShellGet"
+    }
+}
+
+function Restore-PowerShellGalleryPolicy {
+    if ($null -eq $script:PSGalleryOriginalState) { return }
+    try {
+        if ($script:PSGalleryOriginalState.WasRegistered) {
+            $originalPolicy = [string]$script:PSGalleryOriginalState.InstallationPolicy
+            if (-not [string]::IsNullOrWhiteSpace($originalPolicy)) {
+                Set-PSRepository -Name PSGallery -InstallationPolicy $originalPolicy
+                Write-Log "Restored PSGallery installation policy to $originalPolicy."
+            }
+        }
+        elseif (Get-PSRepository -Name PSGallery -ErrorAction SilentlyContinue) {
+            Unregister-PSRepository -Name PSGallery
+            Write-Log 'Removed the temporary PSGallery registration created for HPCMSL setup.'
+        }
+    }
+    catch {
+        Write-Log "Could not restore the previous PSGallery registration/policy: $($_.Exception.Message)" 'WARN'
     }
 }
 
@@ -90,7 +131,9 @@ $ProgressPreference = 'SilentlyContinue'
 
 $packageManagement = Get-Module -ListAvailable -Name PackageManagement | Sort-Object Version -Descending | Select-Object -First 1
 $powerShellGet = Get-Module -ListAvailable -Name PowerShellGet | Sort-Object Version -Descending | Select-Object -First 1
-if (-not $packageManagement) { throw 'PackageManagement is not installed.' }
+if (-not $packageManagement -or [version]$packageManagement.Version -lt [version]'1.4.8.1') {
+    throw 'PackageManagement 1.4.8.1 or later is not available in the fresh process.'
+}
 if (-not $powerShellGet -or [version]$powerShellGet.Version -lt [version]'2.2.5') {
     throw 'PowerShellGet 2.2.5 or later is not available in the fresh process.'
 }
@@ -104,20 +147,40 @@ Install-Module -Name HPCMSL -Repository PSGallery -Scope AllUsers -Force -AllowC
 '@
 
     $encodedInstaller = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($installer))
-    $powerShellExe = Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe'
-    $installerOutput = @(& $powerShellExe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass `
-        -EncodedCommand $encodedInstaller 2>&1)
-    $installerExitCode = $LASTEXITCODE
+    $engineCandidates = New-Object System.Collections.Generic.List[object]
+    $engineCandidates.Add([pscustomobject]@{
+        Name = 'fresh Windows PowerShell 5.1'
+        Path = (Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe')
+    })
+    $powerShell7 = Get-Command -Name 'pwsh.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($powerShell7) {
+        $engineCandidates.Add([pscustomobject]@{ Name = 'PowerShell 7 fallback'; Path = $powerShell7.Source })
+    }
 
-    foreach ($line in $installerOutput) {
-        $text = [string]$line
-        if (-not [string]::IsNullOrWhiteSpace($text) -and $text -ne 'HPCMSL_INSTALL_OK') {
-            Write-Log "HPCMSL installer: $text"
+    $failures = New-Object System.Collections.Generic.List[string]
+    foreach ($engine in $engineCandidates) {
+        Write-Log "Trying HPCMSL installation in $($engine.Name)."
+        $installerOutput = @(& $engine.Path -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass `
+            -EncodedCommand $encodedInstaller 2>&1)
+        $installerExitCode = $LASTEXITCODE
+
+        foreach ($line in $installerOutput) {
+            $text = [string]$line
+            if (-not [string]::IsNullOrWhiteSpace($text) -and $text -ne 'HPCMSL_INSTALL_OK') {
+                Write-Log "$($engine.Name): $text"
+            }
         }
+        if ($installerExitCode -eq 0 -and $installerOutput -contains 'HPCMSL_INSTALL_OK') {
+            Write-Log "HPCMSL installation succeeded in $($engine.Name)." 'SUCCESS'
+            return
+        }
+        $failures.Add("$($engine.Name) exited with code $installerExitCode")
     }
-    if ($installerExitCode -ne 0 -or $installerOutput -notcontains 'HPCMSL_INSTALL_OK') {
-        throw "The fresh PowerShell HPCMSL installer failed with exit code $installerExitCode."
-    }
+
+    $fallbackGuidance = if (-not $powerShell7) {
+        ' PowerShell 7 was not installed, so no modern-engine fallback was available.'
+    } else { '' }
+    throw "HPCMSL installation failed in every available fresh PowerShell process: $($failures -join '; ').$fallbackGuidance"
 }
 
 if (-not (Test-Administrator)) { Write-Log 'Run this script as Administrator/SYSTEM.' 'ERROR'; throw 'Administrator rights are required.' }
@@ -142,8 +205,13 @@ try {
 
     if (-not $hpcmslReady) {
         Write-Log 'Installing compatible prerequisites and HP Client Management Script Library.'
-        Initialize-PowerShellGalleryClient
-        Install-HPCMSLInFreshPowerShell
+        try {
+            Initialize-PowerShellGalleryClient
+            Install-HPCMSLInFreshPowerShell
+        }
+        finally {
+            Restore-PowerShellGalleryPolicy
+        }
         if (-not (Get-Module -ListAvailable -Name HPCMSL)) {
             throw 'HPCMSL installation completed but the module is not visible in the system module path.'
         }

@@ -1,6 +1,6 @@
 # ScriptBox
 
-ScriptBox is a portable Windows PowerShell operations console with an InvokeX-inspired workflow and a much lighter WPF implementation. It provides application references, script execution, network tools, diagnostics, and system information without installing ScriptBox itself or carrying an Electron/Node runtime.
+ScriptBox is a portable Windows PowerShell operations console with an InvokeX-inspired workflow and a much lighter WPF implementation. It provides application installation actions, script execution, network tools, diagnostics, and system information without installing ScriptBox itself or carrying an Electron/Node runtime.
 
 ![ScriptBox icon](assets/icon.png)
 
@@ -12,13 +12,13 @@ Open Windows PowerShell and run:
 irm https://raw.githubusercontent.com/GoblinRules/ScriptBox/main/ScriptBox.ps1 | iex
 ```
 
-ScriptBox does not install itself. The initial launcher fetches only the UI/catalog and icon—not every catalog script. A script file is downloaded into memory only after the user selects **RUN** and accepts its confirmation. Temporary output is kept in a uniquely named Windows temporary folder and removed when the app closes. The **Applications** section is read-only: it can report registered install status and open HTTPS publisher pages, but it never downloads or installs an application. Scripts launched deliberately from the **Scripts** catalogue may make their own documented system changes or install/open third-party tools.
+ScriptBox does not install itself. The initial launcher fetches only the UI/catalog and icon—not every catalog script. A script file is downloaded into memory only after the user selects **RUN** and accepts its confirmation. Temporary output is kept in a uniquely named Windows temporary folder and removed when the app closes. The **Applications** section detects supported apps, offers InvokeX-style portable/installer/run buttons, and supports a sequential selected-app queue. An application is downloaded or started only after explicit confirmation. Scripts launched deliberately from the **Scripts** catalogue may make their own documented system changes or install/open third-party tools.
 
 > `irm | iex` executes code from the internet. Review [`ScriptBox.ps1`](ScriptBox.ps1) and the source URLs shown by each script before running it.
 
 ## Shell sections
 
-- **Applications** — searchable publisher references with read-only installed/not-detected status where Windows exposes it. Opening a card only opens its HTTPS publisher page.
+- **Applications** — searchable installed/available status, publisher links, portable downloads, installers, run actions, and selected-app batch execution. ScriptBox itself remains portable.
 - **Scripts** — the complete existing ScriptBox catalogue. Script areas are tabs across the top, while the left navigation stays focused on the major tools.
 - **Network Tools** — ping, traceroute, latency statistics, common IP/DNS commands, and native Windows shortcuts.
 - **Diagnostics** — one-click read-only gateway, internet, DNS, TCP 443, and HTTPS checks. The detailed KVM tools remain available under Scripts.
@@ -83,7 +83,9 @@ Set `ShowInAllScripts` to `$false` for an action that should appear only inside 
 
 - Windows PowerShell 5.1 and WPF are already included with supported desktop versions of Windows.
 - The shell uses no Electron, Node.js, package manager, background service, scheduled task, or installed application footprint.
-- Application cards cache one read-only scan of Windows uninstall records and never download or install software.
+- Application status uses the same file, service, licensing, and bundle checks as InvokeX. Download/install/run buttons always show a confirmation and stream progress to the terminal.
+- Portable application downloads are saved to the current user's Desktop. Installers use temporary files that are removed after completion.
+- **Configure HP BIOS** installs NuGet, compatible PackageManagement/PowerShellGet, and HPCMSL only when needed. It accepts the HP module licence, uses a fresh process to avoid loaded legacy assemblies, can fall back to an already-installed PowerShell 7, and restores the prior PSGallery trust policy afterward.
 - PowerShell 7 launches a short Windows PowerShell STA handoff because WPF requires an STA thread; the handoff itself does not use a policy bypass.
 - Script output is streamed from a temporary UTF-8 log and removed after completion or app shutdown.
 - Multi-selection runs sequentially, avoiding simultaneous registry, policy, installer, and firmware changes.

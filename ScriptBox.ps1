@@ -1,4 +1,4 @@
-#requires -Version 5.1
+﻿#requires -Version 5.1
 <#+
 .SYNOPSIS
     ScriptBox - a portable, category-based Windows script launcher.
@@ -11,7 +11,7 @@ Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 
 $script:AppName = 'ScriptBox'
-$script:Version = '3.0.0'
+$script:Version = '3.1.0'
 $script:Repository = 'https://github.com/GoblinRules/ScriptBox'
 $script:SelfSource = 'https://raw.githubusercontent.com/GoblinRules/ScriptBox/main/ScriptBox.ps1'
 $script:IconSource = 'https://raw.githubusercontent.com/GoblinRules/ScriptBox/main/assets/icon.png'
@@ -22,16 +22,20 @@ $script:ActiveCategory = 'All scripts'
 $script:IsDarkTheme = $true
 $script:SystemInfoLoaded = $false
 $script:SystemInfoSnapshot = $null
-$script:InstalledApplicationNames = $null
+$script:ApplicationStatusCache = @{}
 $script:TerminalMode = 'Normal'
 $script:SectionButtons = @{}
 $script:RunState = $null
 $script:RunButtons = New-Object System.Collections.Generic.List[object]
 $script:SelectionControls = New-Object System.Collections.Generic.List[object]
 $script:SelectedIds = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+$script:ApplicationSelectionControls = New-Object System.Collections.Generic.List[object]
+$script:SelectedApplicationIds = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
 $script:RunQueue = New-Object 'System.Collections.Generic.Queue[object]'
 $script:QueueResults = New-Object System.Collections.Generic.List[object]
 $script:IsQueueRunning = $false
+$script:QueueTitle = 'Selected scripts'
+$script:QueueNoun = 'scripts'
 
 # PowerShell 7 normally starts in MTA. WPF needs an STA thread, so hand off to
 # Windows PowerShell without writing the launcher itself to disk.
@@ -210,28 +214,54 @@ $script:Catalog = @(
     New-CatalogItem -Id 'kvm-client-tailscale-diagnostics' -Name 'KVM Client Tailscale Diagnostics' -Category 'Diagnostics' -Description 'Tests the viewer-side Tailscale path, latency, loss, NAT conditions, and JetKVM web reachability.' -ScriptPath 'KvmClientTailscaleDiagnostics.ps1' -ScriptArguments '-KvmName $KvmName -PingCount 10 -NonInteractive' -Impact 'Performs read-only Tailscale, ping, netcheck, and TCP tests and saves a text report to Downloads.' -InputTitle 'KVM machine name' -InputMessage 'Enter the KVM machine name exactly as it appears in Tailscale.' -InputVariable 'KvmName' -Accent '#22D3EE' -SuccessMessage 'The viewer-side KVM connection tests completed; review the good, warning, and problem counts below.'
     New-CatalogItem -Id 'kvm-site-network-diagnostics' -Name 'KVM Site Network Diagnostics' -Category 'Diagnostics' -Description 'Checks the KVM-site router path, NAT, firewall, UDP/STUN, port mapping, and Tailscale conditions.' -ScriptPath 'KvmSiteNetworkDiagnostics.ps1' -ScriptArguments '-KvmName $KvmName -NonInteractive' -Impact 'Performs read-only local and internet connectivity tests and saves a text report to Downloads.' -InputTitle 'KVM report label' -InputMessage 'Enter the KVM machine name. It labels the report and enables an optional Tailscale lookup.' -InputVariable 'KvmName' -Accent '#34D399' -SuccessMessage 'The KVM-site network tests completed; review the good, warning, and problem counts below.'
     New-CatalogItem -Id 'watch-wol-packets' -Name 'Watch Wake-on-LAN Packets' -Category 'Diagnostics' -Description 'Opens a live popup that watches network adapters for UDP packets on Wake-on-LAN ports 7 and 9.' -ScriptPath 'Watch-WakeOnLanPackets.ps1' -Impact 'Stops any existing machine-wide Pktmon capture, replaces all Pktmon filters with UDP 7 and 9 filters, and runs a live NIC capture until the popup closes. Closing it stops capture and removes the filters.' -RequiresAdmin $true -CanQueue $false -ResultMode 'None' -Accent '#34D399' -SuccessMessage 'Wake-on-LAN packet watching finished and Pktmon was cleaned up.'
-    New-CatalogItem -Id 'configure-hp-bios' -Name 'Configure HP BIOS' -Category 'BIOS' -Description 'Configures common writable HP commercial BIOS settings and installs HPCMSL with compatible gallery tooling if needed.' -ScriptPath 'Configure-HPBIOS.ps1' -ScriptArguments '-BIOSPassword $BIOSPassword' -Impact 'May update PowerShellGet and install HP management components, then changes supported firmware settings. Test each model and restart afterward.' -RequiresAdmin $true -InputTitle 'BIOS setup password' -InputMessage 'Optional: enter the BIOS setup password, or leave it blank if none is configured.' -InputVariable 'BIOSPassword' -InputOptional $true -InputSecret $true -ConflictGroup 'bios-vendor' -Accent '#22D3EE' -SuccessMessage 'Supported HP BIOS settings were applied or reported with model-specific guidance.'
+    New-CatalogItem -Id 'configure-hp-bios' -Name 'Configure HP BIOS' -Category 'BIOS' -Description 'Configures common writable HP commercial BIOS settings and installs HPCMSL with compatible gallery tooling if needed.' -ScriptPath 'Configure-HPBIOS.ps1' -ScriptArguments '-BIOSPassword $BIOSPassword' -Impact 'If needed, installs the NuGet provider, repairs PackageManagement/PowerShellGet, accepts the HP module licence, and installs HPCMSL for all users. PSGallery is trusted only during setup and its prior policy is restored afterward. A fresh Windows PowerShell process is used, with PowerShell 7 as a fallback only when it is already installed. The action then changes supported firmware settings. Test each model and restart afterward.' -RequiresAdmin $true -InputTitle 'BIOS setup password' -InputMessage 'Optional: enter the BIOS setup password, or leave it blank if none is configured.' -InputVariable 'BIOSPassword' -InputOptional $true -InputSecret $true -ConflictGroup 'bios-vendor' -Accent '#22D3EE' -SuccessMessage 'Supported HP BIOS settings were applied or reported with model-specific guidance.'
     New-CatalogItem -Id 'configure-hp-g3-g5-mini-wol-kvm' -Name 'Configure HP G3/G5 Mini WOL/KVM' -Category 'BIOS' -Description 'Configures an HP EliteDesk 800 G3 or G5 Desktop Mini for JetKVM USB power, pre-boot keyboard access, and Wake-on-LAN.' -ScriptPath 'Configure-HPEliteDesk800G5WolKvm.ps1' -ScriptArguments '-BiosPassword $BIOSPassword' -Impact "The script is restricted to HP EliteDesk 800 G3 and G5 Desktop Mini systems, including 35W and 65W variants, so it stops without making changes on other models.`n`nIt will:`n• Check and configure the required HP BIOS settings for JetKVM USB power, pre-boot keyboard access, Wake-on-LAN, and recovery after a power cut. Settings are applied only when that exact HP BIOS setting is exposed; settings unavailable on a G3 or G5 are reported as warnings and are not guessed or forced.`n• Disable Windows Fast Startup.`n• Enable WakeOnMagicPacket and disable pattern-based waking on every physical wired Ethernet adapter that supports those options.`n• Enable supported driver options such as Shutdown WOL, S5 WOL, and PME.`n• Arm the Ethernet adapter with powercfg /deviceenablewake.`n• Avoid restarting the network adapter while running; some adapter changes require a PC restart before becoming active.`n• Export every HP BIOS setting and all configuration results to a TXT report.`n• Display the selected wired MAC address in colon format, for example AA:BB:CC:DD:EE:FF, and copy it to the clipboard.`n`nRestart the PC once after completion." -RequiresAdmin $true -InputTitle 'HP G3/G5 Mini BIOS password' -InputMessage 'Optional: enter the HP BIOS administrator password, or leave it blank if none is configured.' -InputVariable 'BIOSPassword' -InputOptional $true -InputSecret $true -ConflictGroup 'bios-vendor' -CanQueue $false -ResultMode 'None' -Accent '#F59E0B' -SuccessMessage 'The HP G3/G5 Mini WOL/KVM configuration finished and displayed its MAC address and report path.'
     New-CatalogItem -Id 'configure-dell-bios' -Name 'Configure Dell BIOS' -Category 'BIOS' -Description 'Configures common Dell commercial BIOS settings using Dell Command Configure.' -ScriptPath 'Configure-DellBIOS.ps1' -ScriptArguments '-BIOSPassword $BIOSPassword' -Impact 'May install Dell Command Configure and changes supported firmware settings. Test each model and restart afterward.' -RequiresAdmin $true -InputTitle 'BIOS setup password' -InputMessage 'Optional: enter the BIOS setup password, or leave it blank if none is configured.' -InputVariable 'BIOSPassword' -InputOptional $true -InputSecret $true -ConflictGroup 'bios-vendor' -Accent '#C084FC' -SuccessMessage 'Supported Dell BIOS settings were applied or reported with model-specific guidance.'
     New-CatalogItem -Id 'configure-lenovo-bios' -Name 'Configure Lenovo BIOS' -Category 'BIOS' -Description 'Configures common ThinkPad, ThinkCentre, and ThinkStation BIOS settings through Lenovo WMI.' -ScriptPath 'Configure-LenovoBIOS.ps1' -ScriptArguments '-BIOSPassword $BIOSPassword' -Impact 'Changes supported firmware settings through Lenovo WMI. Test each product family and restart afterward.' -RequiresAdmin $true -InputTitle 'BIOS setup password' -InputMessage 'Optional: enter the BIOS setup password, or leave it blank if none is configured.' -InputVariable 'BIOSPassword' -InputOptional $true -InputSecret $true -ConflictGroup 'bios-vendor' -Accent '#34D399' -SuccessMessage 'Supported Lenovo BIOS settings were applied or reported with model-specific guidance.'
 )
 # ============================== END CATALOG ================================
 
-# Lightweight, non-installing application directory inspired by InvokeX.
-# These cards open the publisher's page only; ScriptBox never downloads or
-# installs an application from this section.
+# InvokeX-compatible application actions in a portable ScriptBox shell. The
+# shell itself remains install-free; an application is downloaded or launched
+# only after its own action button (or an explicitly selected batch) is used.
 $script:ApplicationLinks = @(
-    [pscustomobject]@{ Name = 'TRIP (Tray IP)'; Description = 'Lightweight system-tray IP monitor with notifications and an overlay.'; Tags = 'NETWORK  •  UTILITY'; Uri = 'https://github.com/GoblinRules/TRIP'; Detect = 'TRIP*'; Accent = '#22D3EE' }
-    [pscustomobject]@{ Name = 'ClearShot'; Description = 'Screenshot capture and annotation utility for Windows.'; Tags = 'UTILITY'; Uri = 'https://github.com/GoblinRules/ClearShot'; Detect = 'ClearShot*'; Accent = '#A855F7' }
-    [pscustomobject]@{ Name = 'SlickClick'; Description = 'Lightweight auto-clicker with pacing, targets, and tray support.'; Tags = 'UTILITY'; Uri = 'https://github.com/GoblinRules/SlickClick'; Detect = 'SlickClick*'; Accent = '#34D399' }
-    [pscustomobject]@{ Name = 'PyAutoClicker'; Description = 'Automated clicking utility for Windows.'; Tags = 'UTILITY'; Uri = 'https://github.com/GoblinRules/PyAutoClicker'; Detect = 'PyAutoClicker*'; Accent = '#F59E0B' }
-    [pscustomobject]@{ Name = 'IP Python Tray App'; Description = 'Legacy system-tray IP address display utility.'; Tags = 'NETWORK  •  LEGACY'; Uri = 'https://github.com/GoblinRules/ippy-tray-app'; Detect = 'IP Python Tray App*'; Accent = '#38BDF8' }
-    [pscustomobject]@{ Name = 'PowerEventProvider'; Description = 'Power-management event provider and logging service.'; Tags = 'POWER  •  SYSTEM'; Uri = 'https://github.com/GoblinRules/powereventprovider'; Detect = 'PowerEventProvider*'; Accent = '#F472B6' }
-    [pscustomobject]@{ Name = 'CTT WinUtil'; Description = 'Chris Titus Tech Windows utility collection.'; Tags = 'SYSTEM  •  UTILITY'; Uri = 'https://github.com/ChrisTitusTech/winutil'; Detect = ''; Accent = '#2DD4BF' }
-    [pscustomobject]@{ Name = 'MASS'; Description = 'Microsoft Activation Scripts source repository.'; Tags = 'SYSTEM'; Uri = 'https://github.com/massgravel/Microsoft-Activation-Scripts'; Detect = ''; Accent = '#C084FC' }
-    [pscustomobject]@{ Name = 'Tailscale'; Description = 'Secure mesh networking and VPN platform.'; Tags = 'NETWORK  •  SECURITY'; Uri = 'https://tailscale.com/'; Detect = 'Tailscale*'; Accent = '#60A5FA' }
-    [pscustomobject]@{ Name = 'MuMu Player'; Description = 'Android emulator for Windows.'; Tags = 'UTILITY'; Uri = 'https://www.mumuplayer.com/'; Detect = 'MuMu*'; Accent = '#FB7185' }
-    [pscustomobject]@{ Name = 'Ninite'; Description = 'Publisher page for the essential Windows application bundle.'; Tags = 'UTILITY  •  BROWSER'; Uri = 'https://ninite.com/'; Detect = ''; Accent = '#4ADE80' }
+    [pscustomobject]@{ Id='trip'; Name='TRIP (Tray IP)'; Description='Lightweight system tray IP monitor with notifications and overlay.'; Tags=@('NETWORK','UTILITY'); Uri='https://github.com/GoblinRules/TRIP'; LinkLabel='GitHub'; Accent='#22D3EE'; Actions=@(
+        [pscustomobject]@{ Text='Download Portable'; Type='Portable'; Uri='https://github.com/GoblinRules/TRIP/releases/download/v2.4.0/TRIP.exe'; FileName='TRIP.exe'; RequiresAdmin=$false; Impact='Downloads the portable TRIP executable to the current user''s Desktop. It does not run it automatically.' },
+        [pscustomobject]@{ Text='Download Installer'; Type='Exe'; Uri='https://github.com/GoblinRules/TRIP/releases/download/v2.4.0/TRIP_Setup.exe'; FileName='TRIP_Setup.exe'; RequiresAdmin=$true; Impact='Downloads the TRIP installer to a temporary file and starts it with administrator rights.' }
+    ) }
+    [pscustomobject]@{ Id='clearshot'; Name='ClearShot'; Description='Screenshot tool with region capture, annotation editor, and hotkeys.'; Tags=@('UTILITY'); Uri='https://github.com/GoblinRules/ClearShot'; LinkLabel='GitHub'; Accent='#A855F7'; Actions=@(
+        [pscustomobject]@{ Text='Download Portable'; Type='Portable'; Uri='https://github.com/GoblinRules/ClearShot/releases/download/v1.3.8/ClearShot.exe'; FileName='ClearShot.exe'; RequiresAdmin=$false; Impact='Downloads the portable ClearShot executable to the current user''s Desktop. It does not run it automatically.' },
+        [pscustomobject]@{ Text='Download Installer'; Type='Exe'; Uri='https://github.com/GoblinRules/ClearShot/releases/download/v1.3.8/ClearShot_Setup_1.3.8.exe'; FileName='ClearShot_Setup_1.3.8.exe'; RequiresAdmin=$true; Impact='Downloads the ClearShot installer to a temporary file and starts it with administrator rights.' }
+    ) }
+    [pscustomobject]@{ Id='slickclick'; Name='SlickClick'; Description='Lightweight auto-clicker—set pace, pick targets, and use tray controls.'; Tags=@('UTILITY'); Uri='https://github.com/GoblinRules/SlickClick'; LinkLabel='GitHub'; Accent='#34D399'; Actions=@(
+        [pscustomobject]@{ Text='Download Portable'; Type='Portable'; Uri='https://github.com/GoblinRules/SlickClick/releases/download/V1.3.2/SlickClick.exe'; FileName='SlickClick.exe'; RequiresAdmin=$false; Impact='Downloads the portable SlickClick executable to the current user''s Desktop. It does not run it automatically.' },
+        [pscustomobject]@{ Text='Download Installer'; Type='Exe'; Uri='https://github.com/GoblinRules/SlickClick/releases/download/V1.3.2/SlickClick_Setup_v1.3.2.exe'; FileName='SlickClick_Setup_v1.3.2.exe'; RequiresAdmin=$true; Impact='Downloads the SlickClick installer to a temporary file and starts it with administrator rights.' }
+    ) }
+    [pscustomobject]@{ Id='pyautoclicker'; Name='PyAutoClicker'; Description='Automated clicking utility for Windows.'; Tags=@('UTILITY'); Uri='https://github.com/GoblinRules/PyAutoClicker'; LinkLabel='GitHub'; Accent='#F59E0B'; Actions=@(
+        [pscustomobject]@{ Text='Install'; Type='RemoteScript'; Uri='https://raw.githubusercontent.com/GoblinRules/PyAutoClicker/main/install.ps1'; FileName=''; RequiresAdmin=$true; Impact='Downloads and runs the current PyAutoClicker installation script from its GitHub repository.' }
+    ) }
+    [pscustomobject]@{ Id='ippy-tray'; Name='IP Python Tray App'; Description='System tray IP address display utility (legacy).'; Tags=@('NETWORK','UTILITY'); Uri='https://github.com/GoblinRules/ippy-tray-app'; LinkLabel='GitHub'; Accent='#38BDF8'; Actions=@(
+        [pscustomobject]@{ Text='Install'; Type='RemoteScript'; Uri='https://raw.githubusercontent.com/GoblinRules/ippy-tray-app/main/install.ps1'; FileName=''; RequiresAdmin=$true; Impact='Downloads and runs the legacy IP Python Tray App installation script from its GitHub repository.' }
+    ) }
+    [pscustomobject]@{ Id='powereventprovider'; Name='PowerEventProvider'; Description='Power management event provider service.'; Tags=@('POWER','SYSTEM'); Uri='https://github.com/GoblinRules/powereventprovider'; LinkLabel='GitHub'; Accent='#F472B6'; Actions=@(
+        [pscustomobject]@{ Text='Download & Install'; Type='Msi'; Uri='https://github.com/GoblinRules/powereventprovider/releases/download/V1.1/PowerEventProviderSetup.msi'; FileName='PowerEventProviderSetup.msi'; RequiresAdmin=$true; Impact='Downloads the PowerEventProvider MSI and installs it for this computer without forcing a restart.' },
+        [pscustomobject]@{ Text='View Power Logs'; Type='Command'; Uri=''; FileName=''; RequiresAdmin=$false; Impact='Reads recent PowerEventProvider events from the Windows Application log.'; Script='Get-EventLog -LogName Application -Source "PowerEventProvider" -Newest 50 | Format-Table TimeGenerated, EntryType, Message -AutoSize -Wrap' }
+    ) }
+    [pscustomobject]@{ Id='ctt-winutil'; Name='CTT WinUtil'; Description='Windows utility collection by Chris Titus Tech.'; Tags=@('SYSTEM','UTILITY'); Uri='https://github.com/ChrisTitusTech/winutil'; LinkLabel='GitHub'; Accent='#2DD4BF'; Actions=@(
+        [pscustomobject]@{ Text='Run WinUtil'; Type='RemoteWindow'; Uri='https://christitus.com/win'; FileName=''; RequiresAdmin=$true; Impact='Opens an elevated PowerShell window and runs the current CTT WinUtil launcher.' }
+    ) }
+    [pscustomobject]@{ Id='mass'; Name='MASS'; Description='Microsoft Activation Scripts.'; Tags=@('SYSTEM'); Uri='https://github.com/massgravel/Microsoft-Activation-Scripts'; LinkLabel='GitHub'; Accent='#C084FC'; Actions=@(
+        [pscustomobject]@{ Text='Run MASS'; Type='RemoteWindow'; Uri='https://get.activated.win'; FileName=''; RequiresAdmin=$true; Impact='Opens an elevated PowerShell window and runs Microsoft Activation Scripts from its current launcher.' }
+    ) }
+    [pscustomobject]@{ Id='tailscale'; Name='Tailscale'; Description='VPN and secure networking mesh.'; Tags=@('NETWORK','SECURITY'); Uri='https://tailscale.com/'; LinkLabel='Website'; Accent='#60A5FA'; Actions=@(
+        [pscustomobject]@{ Text='Download & Install'; Type='Exe'; Uri='https://pkgs.tailscale.com/stable/tailscale-setup-latest.exe'; FileName='Tailscale_Setup.exe'; RequiresAdmin=$true; Impact='Downloads the current stable Tailscale installer and starts it with administrator rights.' }
+    ) }
+    [pscustomobject]@{ Id='mumu'; Name='MuMu Player'; Description='Android emulator for Windows.'; Tags=@('UTILITY'); Uri='https://www.mumuplayer.com/'; LinkLabel='Website'; Accent='#FB7185'; Actions=@(
+        [pscustomobject]@{ Text='Download & Install'; Type='Exe'; Uri='https://a11.gdl.netease.com/MuMu_5.0.2_gw-overseas12_all_1754534682.exe?n=MuMu_5.0.2_lMBe7ZC.exe'; FileName='MuMu_Player_Setup.exe'; RequiresAdmin=$true; Impact='Downloads the MuMu Player installer and starts it with administrator rights.' }
+    ) }
+    [pscustomobject]@{ Id='ninite'; Name='Ninite Installer'; Description='Essential apps bundle: 7-Zip, Chrome, Firefox, and Notepad++.'; Tags=@('UTILITY','BROWSER'); Uri='https://ninite.com/'; LinkLabel='Website'; Accent='#4ADE80'; Actions=@(
+        [pscustomobject]@{ Text='Download & Install'; Type='Exe'; Uri='https://ninite.com/7zip-chrome-firefox-notepadplusplus/ninite.exe'; FileName='Ninite_Core_Apps.exe'; RequiresAdmin=$true; Impact='Downloads the Ninite bundle and installs or updates 7-Zip, Chrome, Firefox, and Notepad++.' }
+    ) }
 )
 
 $script:IsAdministrator = Test-IsAdministrator
@@ -240,18 +270,18 @@ $script:TempRoot = New-ScriptBoxTempRoot
 $windowXaml = @'
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="ScriptBox" Width="1280" Height="850" MinWidth="1080" MinHeight="720"
+        Title="ScriptBox" Width="1480" Height="900" MinWidth="1120" MinHeight="720"
         WindowStartupLocation="CenterScreen" Background="{DynamicResource AppBackground}" Foreground="{DynamicResource PrimaryText}"
         FontFamily="Segoe UI" UseLayoutRounding="True">
     <Window.Resources>
-        <SolidColorBrush x:Key="AppBackground" Color="#080B17"/>
-        <SolidColorBrush x:Key="SidebarBackground" Color="#0C1022"/>
-        <SolidColorBrush x:Key="SurfaceBackground" Color="#11182D"/>
-        <SolidColorBrush x:Key="CardBackground" Color="#11172B"/>
-        <SolidColorBrush x:Key="ControlBackground" Color="#1A2340"/>
-        <SolidColorBrush x:Key="InputBackground" Color="#0B1123"/>
-        <SolidColorBrush x:Key="TerminalBackground" Color="#070A13"/>
-        <SolidColorBrush x:Key="ThemeBorder" Color="#263252"/>
+        <SolidColorBrush x:Key="AppBackground" Color="#09090F"/>
+        <SolidColorBrush x:Key="SidebarBackground" Color="#0E0E17"/>
+        <SolidColorBrush x:Key="SurfaceBackground" Color="#151520"/>
+        <SolidColorBrush x:Key="CardBackground" Color="#12121B"/>
+        <SolidColorBrush x:Key="ControlBackground" Color="#1A1A29"/>
+        <SolidColorBrush x:Key="InputBackground" Color="#101019"/>
+        <SolidColorBrush x:Key="TerminalBackground" Color="#08080D"/>
+        <SolidColorBrush x:Key="ThemeBorder" Color="#29293A"/>
         <SolidColorBrush x:Key="PrimaryText" Color="#F8FAFC"/>
         <SolidColorBrush x:Key="SecondaryText" Color="#A8B3CA"/>
         <SolidColorBrush x:Key="MutedText" Color="#64748B"/>
@@ -263,6 +293,22 @@ $windowXaml = @'
             <Setter Property="Padding" Value="14,8"/>
             <Setter Property="Cursor" Value="Hand"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="ButtonBorder" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="7" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                              VerticalAlignment="{TemplateBinding VerticalContentAlignment}"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="ButtonBorder" Property="Opacity" Value="0.88"/></Trigger>
+                            <Trigger Property="IsPressed" Value="True"><Setter TargetName="ButtonBorder" Property="Opacity" Value="0.70"/></Trigger>
+                            <Trigger Property="IsEnabled" Value="False"><Setter TargetName="ButtonBorder" Property="Opacity" Value="0.42"/></Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
         <Style TargetType="TextBox">
             <Setter Property="Foreground" Value="{DynamicResource PrimaryText}"/>
@@ -270,6 +316,20 @@ $windowXaml = @'
             <Setter Property="BorderBrush" Value="{DynamicResource ThemeBorder}"/>
             <Setter Property="CaretBrush" Value="#22D3EE"/>
             <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TextBox">
+                        <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="8">
+                            <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style TargetType="CheckBox">
+            <Setter Property="Foreground" Value="{DynamicResource SecondaryText}"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
         </Style>
     </Window.Resources>
     <Grid>
@@ -278,13 +338,13 @@ $windowXaml = @'
             <ColumnDefinition Width="*"/>
         </Grid.ColumnDefinitions>
         <Grid.RowDefinitions>
-            <RowDefinition Height="86"/>
+            <RowDefinition Height="62"/>
             <RowDefinition Height="*"/>
-            <RowDefinition x:Name="TerminalRow" Height="222"/>
+            <RowDefinition x:Name="TerminalRow" Height="170"/>
         </Grid.RowDefinitions>
 
         <Border x:Name="SidebarShell" Grid.Column="0" Grid.RowSpan="3" Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource ThemeBorder}" BorderThickness="0,0,1,0">
-            <Grid Margin="20,22">
+            <Grid Margin="16,18">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="*"/>
@@ -292,12 +352,12 @@ $windowXaml = @'
                     <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
                 <StackPanel Orientation="Horizontal">
-                    <Border Width="48" Height="48" CornerRadius="12" Background="#111A32" BorderBrush="#22D3EE" BorderThickness="1">
-                        <Image x:Name="AppIcon" Width="42" Height="42" Stretch="Uniform"/>
+                    <Border Width="44" Height="44" CornerRadius="12" Background="#111A32" BorderBrush="#635BFF" BorderThickness="1">
+                        <Image x:Name="AppIcon" Width="38" Height="38" Stretch="Uniform"/>
                     </Border>
-                    <StackPanel Margin="12,2,0,0">
+                    <StackPanel Margin="11,1,0,0">
                         <TextBlock Text="SCRIPTBOX" FontSize="18" FontWeight="Bold" Foreground="{DynamicResource PrimaryText}"/>
-                        <TextBlock Text="RUN • WATCH • DONE" FontSize="9" FontWeight="SemiBold" Foreground="#22D3EE"/>
+                        <TextBlock x:Name="VersionLabel" Text="PORTABLE" FontSize="9" FontWeight="SemiBold" Foreground="#818CF8"/>
                     </StackPanel>
                 </StackPanel>
 
@@ -309,46 +369,45 @@ $windowXaml = @'
                     </ScrollViewer>
                 </Grid>
 
-                <Border Grid.Row="3" Background="{DynamicResource SurfaceBackground}" BorderBrush="{DynamicResource ThemeBorder}" BorderThickness="1" CornerRadius="12" Padding="12">
+                <Border Grid.Row="3" Background="Transparent" BorderThickness="0" Padding="0">
                     <StackPanel>
-                        <TextBlock x:Name="PrivilegeLabel" FontSize="11" FontWeight="SemiBold" Foreground="#A7F3D0"/>
-                        <TextBlock Text="Elevation is requested only when an action needs it." TextWrapping="Wrap" FontSize="10" Foreground="{DynamicResource SecondaryText}" Margin="0,5,0,8"/>
-                        <Button x:Name="ElevateButton" Content="RESTART AS ADMIN" FontSize="9" Padding="8,5" Margin="0,0,0,8"/>
-                        <WrapPanel>
-                            <Button x:Name="ControlPanelButton" Content="CONTROL PANEL" FontSize="8" Padding="6,4" Margin="0,0,5,5"/>
-                            <Button x:Name="SettingsButton" Content="SETTINGS" FontSize="8" Padding="6,4" Margin="0,0,5,5"/>
-                            <Button x:Name="OpenTerminalButton" Content="TERMINAL" FontSize="8" Padding="6,4" Margin="0,0,5,5"/>
-                        </WrapPanel>
+                        <Button x:Name="ControlPanelButton" Content="⚒  Control Panel" Height="34" FontSize="10" HorizontalContentAlignment="Left" Padding="11,6" Margin="0,0,0,6"/>
+                        <Button x:Name="SettingsButton" Content="⚙  Settings" Height="34" FontSize="10" HorizontalContentAlignment="Left" Padding="11,6" Margin="0,0,0,6"/>
+                        <Button x:Name="OpenTerminalButton" Content="▰  Terminal" Height="34" FontSize="10" HorizontalContentAlignment="Left" Padding="11,6" Margin="0,0,0,6"/>
+                        <Button x:Name="ElevateButton" Content="↻  Restart as Admin" Height="34" FontSize="10" HorizontalContentAlignment="Left" Padding="11,6" Margin="0,0,0,9"/>
+                        <TextBlock x:Name="PrivilegeLabel" FontSize="10" FontWeight="SemiBold" Foreground="#A7F3D0" Margin="2,0,0,4"/>
+                        <TextBlock Text="ScriptBox stays portable" FontSize="9" Foreground="{DynamicResource MutedText}" Margin="2,0,0,0"/>
                     </StackPanel>
                 </Border>
             </Grid>
         </Border>
 
-        <Grid Grid.Column="1" Grid.Row="0" Margin="26,18,26,10">
+        <Grid Grid.Column="1" Grid.Row="0" Margin="26,10,26,8">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="300"/>
             </Grid.ColumnDefinitions>
-            <StackPanel>
-                <TextBlock x:Name="PageTitle" Text="Scripts" FontSize="25" FontWeight="Bold" Foreground="{DynamicResource PrimaryText}"/>
-                <TextBlock x:Name="ResultsLabel" Text="Safe, visible execution with live output." FontSize="12" Foreground="{DynamicResource SecondaryText}" Margin="0,5,0,0"/>
-            </StackPanel>
-            <StackPanel x:Name="BatchPanel" Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Bottom" Margin="12,0,14,0">
+            <Grid x:Name="SearchPanel" Width="520" HorizontalAlignment="Left">
+                <TextBlock Text="⌕" FontSize="17" Foreground="{DynamicResource MutedText}" Margin="13,7,0,0" Panel.ZIndex="1"/>
+                <TextBlock x:Name="SearchHint" Text="Search apps and scripts...  (Ctrl+K)" FontSize="12" Foreground="{DynamicResource MutedText}"
+                           Margin="39,12,0,0" IsHitTestVisible="False" Panel.ZIndex="1"/>
+                <TextBox x:Name="SearchBox" Height="42" Padding="38,11,13,8" FontSize="13" VerticalContentAlignment="Center"/>
+            </Grid>
+            <StackPanel x:Name="BatchPanel" Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="12,0,0,0">
                 <Button x:Name="ClearSelectionButton" Content="CLEAR" Height="42" Padding="12,7" Margin="0,0,8,0"
-                        Background="#151D35" BorderBrush="#334263" Foreground="#CBD5E1"/>
+                        Background="{DynamicResource ControlBackground}" BorderBrush="{DynamicResource ThemeBorder}" Foreground="{DynamicResource SecondaryText}"/>
                 <Button x:Name="RunSelectedButton" Content="RUN SELECTED (0)" Height="42" Padding="14,7"
-                        Background="#7C3AED" BorderBrush="#A855F7" Foreground="White"/>
+                        Background="#635BFF" BorderBrush="#756DFF" Foreground="White"/>
                 <Button x:Name="ThemeToggleButton" Content="LIGHT" Height="42" Padding="12,7" Margin="8,0,0,0"/>
             </StackPanel>
-            <Grid x:Name="SearchPanel" Grid.Column="2">
-                <TextBlock Text="SEARCH" FontSize="9" FontWeight="Bold" Foreground="{DynamicResource MutedText}" Margin="12,-3,0,0" Panel.ZIndex="1"/>
-                <TextBox x:Name="SearchBox" Height="42" Padding="13,12,13,8" FontSize="13" VerticalContentAlignment="Center"/>
-            </Grid>
         </Grid>
 
-        <ScrollViewer Grid.Column="1" Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Margin="26,8,12,10">
+        <ScrollViewer Grid.Column="1" Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Margin="26,12,12,8">
             <StackPanel>
+                <StackPanel Margin="6,0,14,20">
+                    <TextBlock x:Name="PageTitle" Text="Scripts" FontSize="29" FontWeight="Bold" Foreground="{DynamicResource PrimaryText}"/>
+                    <TextBlock x:Name="ResultsLabel" Text="Safe, visible execution with live output." FontSize="13" Foreground="{DynamicResource SecondaryText}" Margin="0,5,0,0"/>
+                </StackPanel>
                 <Border x:Name="ScriptTabsPanel" Background="{DynamicResource SurfaceBackground}" BorderBrush="{DynamicResource ThemeBorder}" BorderThickness="1" CornerRadius="12" Padding="10" Margin="0,0,14,14">
                     <WrapPanel x:Name="CategoryHost"/>
                 </Border>
@@ -356,17 +415,17 @@ $windowXaml = @'
             </StackPanel>
         </ScrollViewer>
 
-        <Border x:Name="TerminalShell" Grid.Column="1" Grid.Row="2" Margin="26,4,26,22" Background="{DynamicResource TerminalBackground}" BorderBrush="{DynamicResource ThemeBorder}" BorderThickness="1" CornerRadius="14">
+        <Border x:Name="TerminalShell" Grid.Column="1" Grid.Row="2" Margin="26,4,26,12" Background="{DynamicResource TerminalBackground}" BorderBrush="{DynamicResource ThemeBorder}" BorderThickness="1" CornerRadius="10">
             <Grid>
                 <Grid.RowDefinitions>
-                    <RowDefinition Height="43"/>
+                    <RowDefinition Height="39"/>
                     <RowDefinition Height="*"/>
                 </Grid.RowDefinitions>
                 <Border BorderBrush="#202A48" BorderThickness="0,0,0,1" Padding="14,0">
                     <Grid>
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                             <Ellipse Width="8" Height="8" Fill="#34D399" Margin="0,0,9,0"/>
-                            <TextBlock Text="LIVE TERMINAL" FontSize="10" FontWeight="Bold" Foreground="#CBD5E1" VerticalAlignment="Center"/>
+                            <TextBlock Text="TERMINAL" FontSize="10" FontWeight="Bold" Foreground="#CBD5E1" VerticalAlignment="Center"/>
                             <TextBlock x:Name="TerminalStatus" Text="  READY" FontSize="10" FontWeight="Bold" Foreground="#34D399" VerticalAlignment="Center"/>
                         </StackPanel>
                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
@@ -394,6 +453,7 @@ $script:CategoryHost = $script:Window.FindName('CategoryHost')
 $script:SectionHost = $script:Window.FindName('SectionHost')
 $script:ScriptTabsPanel = $script:Window.FindName('ScriptTabsPanel')
 $script:SearchBox = $script:Window.FindName('SearchBox')
+$script:SearchHint = $script:Window.FindName('SearchHint')
 $script:SearchPanel = $script:Window.FindName('SearchPanel')
 $script:PageTitle = $script:Window.FindName('PageTitle')
 $script:ResultsLabel = $script:Window.FindName('ResultsLabel')
@@ -412,6 +472,7 @@ $script:SettingsButton = $script:Window.FindName('SettingsButton')
 $script:OpenTerminalButton = $script:Window.FindName('OpenTerminalButton')
 $script:PrivilegeLabel = $script:Window.FindName('PrivilegeLabel')
 $script:AppIcon = $script:Window.FindName('AppIcon')
+$script:VersionLabel = $script:Window.FindName('VersionLabel')
 
 function Add-TerminalLine {
     param(
@@ -436,10 +497,32 @@ function Set-RunButtonsEnabled {
         $control.Focusable = $Enabled
         $control.Opacity = if ($Enabled) { 1.0 } else { 0.45 }
     }
+    foreach ($control in $script:ApplicationSelectionControls) {
+        $control.IsHitTestVisible = $Enabled
+        $control.Focusable = $Enabled
+        $control.Opacity = if ($Enabled) { 1.0 } else { 0.45 }
+    }
     Update-SelectionControls
 }
 
 function Update-SelectionControls {
+    if ($script:ActiveSection -eq 'Applications') {
+        $count = $script:SelectedApplicationIds.Count
+        $script:RunSelectedButton.Content = "INSTALL SELECTED ($count)"
+        $idle = -not $script:RunState -and -not $script:IsQueueRunning
+        $canRun = $idle -and $count -ge 1
+
+        $script:RunSelectedButton.IsHitTestVisible = $canRun
+        $script:RunSelectedButton.Focusable = $canRun
+        $script:RunSelectedButton.Opacity = if ($canRun) { 1.0 } else { 0.42 }
+        $script:RunSelectedButton.ToolTip = if ($canRun) { 'Run the primary action for each selected application in order.' } else { 'Select one or more applications.' }
+        $script:ClearSelectionButton.IsHitTestVisible = $canRun
+        $script:ClearSelectionButton.Focusable = $canRun
+        $script:ClearSelectionButton.Opacity = if ($canRun) { 1.0 } else { 0.42 }
+        $script:ClearSelectionButton.ToolTip = if ($canRun) { 'Clear all selected applications.' } else { 'No applications are selected.' }
+        return
+    }
+
     $count = $script:SelectedIds.Count
     $script:RunSelectedButton.Content = "RUN SELECTED ($count)"
     $idle = -not $script:RunState -and -not $script:IsQueueRunning
@@ -455,6 +538,15 @@ function Update-SelectionControls {
     $script:ClearSelectionButton.Focusable = $canClear
     $script:ClearSelectionButton.Opacity = if ($canClear) { 1.0 } else { 0.42 }
     $script:ClearSelectionButton.ToolTip = if ($canClear) { 'Clear all selected scripts.' } else { 'No scripts are selected.' }
+}
+
+function Set-ApplicationSelected {
+    param(
+        [Parameter(Mandatory)][string]$Id,
+        [Parameter(Mandatory)][bool]$Selected
+    )
+    if ($Selected) { [void]$script:SelectedApplicationIds.Add($Id) } else { [void]$script:SelectedApplicationIds.Remove($Id) }
+    Update-SelectionControls
 }
 
 function Set-CatalogItemSelected {
@@ -1161,14 +1253,14 @@ function Set-ScriptBoxTheme {
     $script:IsDarkTheme = $Theme -eq 'Dark'
     $colors = if ($script:IsDarkTheme) {
         @{
-            AppBackground     = '#080B17'
-            SidebarBackground = '#0C1022'
-            SurfaceBackground = '#11182D'
-            CardBackground    = '#11172B'
-            ControlBackground = '#1A2340'
-            InputBackground   = '#0B1123'
-            TerminalBackground = '#070A13'
-            ThemeBorder       = '#263252'
+            AppBackground     = '#09090F'
+            SidebarBackground = '#0E0E17'
+            SurfaceBackground = '#151520'
+            CardBackground    = '#12121B'
+            ControlBackground = '#1A1A29'
+            InputBackground   = '#101019'
+            TerminalBackground = '#08080D'
+            ThemeBorder       = '#29293A'
             PrimaryText       = '#F8FAFC'
             SecondaryText     = '#A8B3CA'
             MutedText         = '#64748B'
@@ -1213,88 +1305,382 @@ function Open-ReferenceUri {
     }
 }
 
-function Get-InstalledApplicationNames {
-    $uninstallRoots = @(
-        'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*',
-        'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*',
-        'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*'
-    )
-    return @($uninstallRoots | ForEach-Object {
-        Get-ItemProperty -Path $_ -ErrorAction SilentlyContinue |
-            Where-Object {
-                $_.PSObject.Properties.Name -contains 'DisplayName' -and
-                -not [string]::IsNullOrWhiteSpace([string]$_.DisplayName)
-            } |
-            ForEach-Object { [string]$_.DisplayName }
-    } | Sort-Object -Unique)
-}
-
 function Get-ApplicationStatus {
     param([Parameter(Mandatory)]$Application)
-    if ([string]::IsNullOrWhiteSpace($Application.Detect)) { return 'REFERENCE' }
-    if (@($script:InstalledApplicationNames | Where-Object { $_ -like $Application.Detect }).Count -gt 0) {
-        return 'INSTALLED'
+
+    if ($script:ApplicationStatusCache.ContainsKey($Application.Id)) {
+        return [string]$script:ApplicationStatusCache[$Application.Id]
     }
-    return 'NOT DETECTED'
+    if ($env:SCRIPTBOX_TEST_MODE -eq '1') {
+        $testStatus = if ($Application.Id -in @('ctt-winutil', 'mass')) { 'AVAILABLE' } else { 'NOT INSTALLED' }
+        $script:ApplicationStatusCache[$Application.Id] = $testStatus
+        return $testStatus
+    }
+
+    $installed = $false
+    $status = 'NOT INSTALLED'
+    try {
+        switch ($Application.Id) {
+            'trip' {
+                $installed = @(
+                    (Join-Path $env:LOCALAPPDATA 'TRIP\TRIP.exe'),
+                    (Join-Path ([Environment]::GetFolderPath('Desktop')) 'TRIP.exe'),
+                    'C:\Tools\TRIP\TRIP.exe'
+                ) | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+            }
+            'clearshot' {
+                $installed = @(
+                    (Join-Path $env:LOCALAPPDATA 'ClearShot\ClearShot.exe'),
+                    (Join-Path ([Environment]::GetFolderPath('Desktop')) 'ClearShot.exe'),
+                    'C:\Program Files\ClearShot\ClearShot.exe'
+                ) | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+            }
+            'slickclick' {
+                $installed = @(
+                    (Join-Path $env:LOCALAPPDATA 'SlickClick\SlickClick.exe'),
+                    (Join-Path ([Environment]::GetFolderPath('Desktop')) 'SlickClick.exe'),
+                    'C:\Program Files\SlickClick\SlickClick.exe'
+                ) | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+            }
+            'pyautoclicker' {
+                $installed = @(
+                    (Join-Path ([Environment]::GetFolderPath('Desktop')) 'PyAutoClicker.lnk'),
+                    'C:\Tools\PyAutoClicker\auto_clicker.py',
+                    (Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\PyAutoClicker\PyAutoClicker.lnk')
+                ) | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+            }
+            'ippy-tray' {
+                $installed = @(
+                    'C:\Tools\TRIP\trip.py',
+                    'C:\Tools\ippy-tray-app\trip.py',
+                    (Join-Path ([Environment]::GetFolderPath('Desktop')) 'TRIP.lnk')
+                ) | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+            }
+            'powereventprovider' { $installed = $null -ne (Get-Service -Name 'PowerEventProvider' -ErrorAction SilentlyContinue) }
+            'ctt-winutil' { $status = 'AVAILABLE' }
+            'mass' {
+                $licensedWindows = Get-CimInstance -ClassName SoftwareLicensingProduct `
+                    -Filter "ApplicationID='55c92734-d682-4d71-983e-d6ec3f16059f' AND LicenseStatus=1" `
+                    -ErrorAction SilentlyContinue | Where-Object PartialProductKey | Select-Object -First 1
+                if ($licensedWindows) { $status = 'INSTALLED' } else { $status = 'AVAILABLE' }
+            }
+            'tailscale' {
+                $installed = @('C:\Program Files\Tailscale\tailscale.exe', 'C:\Program Files (x86)\Tailscale\tailscale.exe') |
+                    Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+            }
+            'mumu' {
+                $installed = @('C:\Program Files\MuMu Player 12\shell\MuMuPlayer.exe', 'C:\Program Files\Netease\MuMuPlayer-12.0\shell\MuMuPlayer.exe') |
+                    Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+            }
+            'ninite' {
+                $missing = @(
+                    'C:\Program Files\7-Zip\7z.exe',
+                    'C:\Program Files\Google\Chrome\Application\chrome.exe',
+                    'C:\Program Files\Mozilla Firefox\firefox.exe',
+                    'C:\Program Files\Notepad++\notepad++.exe'
+                ) | Where-Object { -not (Test-Path -LiteralPath $_) }
+                $installed = @($missing).Count -eq 0
+            }
+        }
+        if ($installed) { $status = 'INSTALLED' }
+    }
+    catch { $status = 'NOT INSTALLED' }
+
+    $script:ApplicationStatusCache[$Application.Id] = $status
+    return $status
+}
+
+function ConvertTo-SingleQuotedPowerShellLiteral {
+    param([AllowEmptyString()][string]$Value)
+    return "'" + $Value.Replace("'", "''") + "'"
+}
+
+function New-ApplicationActionScript {
+    param(
+        [Parameter(Mandatory)]$Application,
+        [Parameter(Mandatory)]$Action
+    )
+
+    if ($Action.Type -notin @('Portable', 'Exe', 'Msi', 'RemoteScript', 'RemoteWindow', 'Command')) {
+        throw "Unsupported application action type: $($Action.Type)"
+    }
+    if ($Action.Type -ne 'Command' -and $Action.Uri -notmatch '^https://') {
+        throw 'Application downloads and launchers must use HTTPS.'
+    }
+
+    $uriLiteral = ConvertTo-SingleQuotedPowerShellLiteral -Value ([string]$Action.Uri)
+    $fileNameLiteral = ConvertTo-SingleQuotedPowerShellLiteral -Value ([string]$Action.FileName)
+    switch ($Action.Type) {
+        'Portable' {
+            return @"
+`$url = $uriLiteral
+`$fileName = $fileNameLiteral
+`$desktop = [Environment]::GetFolderPath('Desktop')
+if ([string]::IsNullOrWhiteSpace(`$desktop) -or -not (Test-Path -LiteralPath `$desktop)) { throw 'The current user Desktop could not be found.' }
+`$destination = Join-Path `$desktop `$fileName
+Write-Host "Downloading $($Application.Name) portable to `$destination..."
+Invoke-WebRequest -UseBasicParsing -Uri `$url -OutFile `$destination
+Write-Host "[SUCCESS] $($Application.Name) was saved to `$destination. It was not started automatically."
+"@
+        }
+        'Exe' {
+            return @"
+`$url = $uriLiteral
+`$fileName = $fileNameLiteral
+`$downloadPath = Join-Path ([IO.Path]::GetTempPath()) (([Guid]::NewGuid().ToString('N')) + '-' + `$fileName)
+try {
+    Write-Host "Downloading $($Application.Name) installer..."
+    Invoke-WebRequest -UseBasicParsing -Uri `$url -OutFile `$downloadPath
+    `$signature = Get-AuthenticodeSignature -FilePath `$downloadPath
+    Write-Host "Authenticode status: `$(`$signature.Status)"
+    Write-Host 'Starting installer...'
+    `$installer = Start-Process -FilePath `$downloadPath -Wait -PassThru
+    if (`$installer.ExitCode -notin @(0, 3010)) { throw "Installer exited with code `$(`$installer.ExitCode)." }
+    Write-Host "[SUCCESS] $($Application.Name) installer completed with exit code `$(`$installer.ExitCode)."
+}
+finally { Remove-Item -LiteralPath `$downloadPath -Force -ErrorAction SilentlyContinue }
+"@
+        }
+        'Msi' {
+            return @"
+`$url = $uriLiteral
+`$fileName = $fileNameLiteral
+`$downloadPath = Join-Path ([IO.Path]::GetTempPath()) (([Guid]::NewGuid().ToString('N')) + '-' + `$fileName)
+try {
+    Write-Host "Downloading $($Application.Name) installer..."
+    Invoke-WebRequest -UseBasicParsing -Uri `$url -OutFile `$downloadPath
+    `$signature = Get-AuthenticodeSignature -FilePath `$downloadPath
+    Write-Host "Authenticode status: `$(`$signature.Status)"
+    `$msiArguments = '/i "{0}" /passive /norestart' -f `$downloadPath
+    `$installer = Start-Process -FilePath 'msiexec.exe' -ArgumentList `$msiArguments -Wait -PassThru
+    if (`$installer.ExitCode -notin @(0, 3010)) { throw "MSI installer exited with code `$(`$installer.ExitCode)." }
+    Write-Host "[SUCCESS] $($Application.Name) installation completed with exit code `$(`$installer.ExitCode)."
+}
+finally { Remove-Item -LiteralPath `$downloadPath -Force -ErrorAction SilentlyContinue }
+"@
+        }
+        'RemoteScript' {
+            return @"
+Write-Host "Downloading the $($Application.Name) installer script..."
+`$source = Invoke-RestMethod -UseBasicParsing -Uri $uriLiteral
+if ([string]::IsNullOrWhiteSpace(`$source)) { throw 'The downloaded installer script was empty.' }
+& ([scriptblock]::Create(`$source))
+Write-Host "[SUCCESS] The $($Application.Name) installer script completed."
+"@
+        }
+        'RemoteWindow' {
+            return @"
+`$launcher = "& { `$source = Invoke-RestMethod -UseBasicParsing -Uri $uriLiteral; if ([string]::IsNullOrWhiteSpace(`$source)) { throw 'The downloaded launcher was empty.' }; & ([scriptblock]::Create(`$source)) }"
+`$encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes(`$launcher))
+Start-Process -FilePath 'powershell.exe' -Verb RunAs -ArgumentList @('-NoLogo','-NoProfile','-ExecutionPolicy','Bypass','-EncodedCommand',`$encoded)
+Write-Host "[SUCCESS] $($Application.Name) was launched in a separate elevated window."
+"@
+        }
+        'Command' { return [string]$Action.Script }
+    }
+}
+
+function New-ApplicationCatalogItem {
+    param(
+        [Parameter(Mandatory)]$Application,
+        [Parameter(Mandatory)]$Action
+    )
+    $scriptText = New-ApplicationActionScript -Application $Application -Action $Action
+    return New-CatalogItem -Id ("application-{0}-{1}" -f $Application.Id, [Guid]::NewGuid().ToString('N')) `
+        -Name ("{0} — {1}" -f $Application.Name, $Action.Text) -Category 'Applications' `
+        -Description $Action.Impact -InlineScript ([scriptblock]::Create($scriptText)) `
+        -RequiresAdmin ([bool]$Action.RequiresAdmin) -RequiresConfirmation $false `
+        -CanQueue $true -ResultMode 'Summary' -Accent '#635BFF' `
+        -SuccessMessage ("{0}: {1} completed." -f $Application.Name, $Action.Text)
+}
+
+function Start-ApplicationAction {
+    param(
+        [Parameter(Mandatory)]$Application,
+        [Parameter(Mandatory)]$Action
+    )
+    if ($script:RunState -or $script:IsQueueRunning) {
+        Add-TerminalLine 'Wait for the current task or queue to finish.'
+        return
+    }
+    $sourceText = if ([string]::IsNullOrWhiteSpace([string]$Action.Uri)) { 'Built-in Windows command' } else { [string]$Action.Uri }
+    $message = "$($Action.Impact)`n`nSource:`n$sourceText`n`nScriptBox itself remains portable; this action affects only the selected application."
+    if (-not (Show-ScriptBoxDialog -Title "$($Action.Text) $($Application.Name)?" -Message $message -Buttons YesNo -Kind Warning)) {
+        Add-TerminalLine "Cancelled: $($Application.Name) — $($Action.Text)"
+        return
+    }
+    Start-CatalogItem -Item (New-ApplicationCatalogItem -Application $Application -Action $Action)
+}
+
+function Clear-SelectedApplications {
+    if ($script:RunState -or $script:IsQueueRunning -or $script:SelectedApplicationIds.Count -eq 0) { return }
+    $script:SelectedApplicationIds.Clear()
+    Render-Applications
+    Add-TerminalLine 'Application selection cleared.'
+}
+
+function Start-SelectedApplications {
+    if ($script:RunState -or $script:IsQueueRunning) {
+        Add-TerminalLine 'Wait for the current task or queue to finish.'
+        return
+    }
+    $applications = @($script:ApplicationLinks | Where-Object { $script:SelectedApplicationIds.Contains($_.Id) })
+    if ($applications.Count -lt 1) { return }
+    $names = @($applications | ForEach-Object { "• $($_.Name) — $($_.Actions[0].Text)" }) -join [Environment]::NewLine
+    $message = "ScriptBox will run each selected application's primary action in order:`n`n$names`n`nDownloads and installers may show administrator or vendor prompts."
+    if (-not (Show-ScriptBoxDialog -Title "Install $($applications.Count) selected application(s)?" -Message $message -Buttons YesNo -Kind Warning)) {
+        Add-TerminalLine 'Selected application queue cancelled.'
+        return
+    }
+
+    $script:RunQueue.Clear()
+    $script:QueueResults.Clear()
+    foreach ($application in $applications) {
+        $script:RunQueue.Enqueue((New-ApplicationCatalogItem -Application $application -Action $application.Actions[0]))
+    }
+    $script:QueueTitle = 'Selected applications'
+    $script:QueueNoun = 'application actions'
+    $script:IsQueueRunning = $true
+    $script:SelectedApplicationIds.Clear()
+    Render-Applications
+    Set-RunButtonsEnabled -Enabled $false
+    Add-TerminalLine "Queued $($applications.Count) application action(s) for sequential execution."
+    Start-NextQueuedItem
+}
+
+function New-TagPill {
+    param([Parameter(Mandatory)][string]$Tag)
+    $colors = @{ NETWORK='#10294B'; UTILITY='#0D3B28'; POWER='#4A2D08'; SYSTEM='#30205B'; SECURITY='#4B1722'; BROWSER='#073B4A' }
+    $foregrounds = @{ NETWORK='#60A5FA'; UTILITY='#4ADE80'; POWER='#FBBF24'; SYSTEM='#C4B5FD'; SECURITY='#FB7185'; BROWSER='#22D3EE' }
+    $pill = New-Object Windows.Controls.Border
+    $pill.Background = $colors[$Tag]
+    $pill.CornerRadius = '7'
+    $pill.Padding = '7,2'
+    $pill.Margin = '0,0,6,0'
+    $text = New-Object Windows.Controls.TextBlock
+    $text.Text = $Tag
+    $text.FontSize = 8
+    $text.FontWeight = 'Bold'
+    $text.Foreground = $foregrounds[$Tag]
+    $pill.Child = $text
+    return $pill
 }
 
 function New-ApplicationCard {
     param([Parameter(Mandatory)]$Application)
 
     $border = New-Object Windows.Controls.Border
-    $border.Width = 342
-    $border.Height = 184
+    $border.Width = 304
+    $border.Height = 246
     $border.Margin = '0,0,14,14'
-    $border.Padding = '18'
-    $border.CornerRadius = '15'
+    $border.Padding = '16'
+    $border.CornerRadius = '12'
     $border.Background = $script:Window.Resources['CardBackground']
-    $border.BorderBrush = $Application.Accent
-    $border.BorderThickness = '1,1,1,2'
+    $border.BorderBrush = $script:Window.Resources['ThemeBorder']
+    $border.BorderThickness = '1'
 
     $grid = New-Object Windows.Controls.Grid
+    $grid.RowDefinitions.Add((New-Object Windows.Controls.RowDefinition -Property @{ Height = 'Auto' }))
+    $grid.RowDefinitions.Add((New-Object Windows.Controls.RowDefinition -Property @{ Height = 58 }))
     $grid.RowDefinitions.Add((New-Object Windows.Controls.RowDefinition -Property @{ Height = 'Auto' }))
     $grid.RowDefinitions.Add((New-Object Windows.Controls.RowDefinition -Property @{ Height = 'Auto' }))
     $grid.RowDefinitions.Add((New-Object Windows.Controls.RowDefinition -Property @{ Height = '*' }))
     $grid.RowDefinitions.Add((New-Object Windows.Controls.RowDefinition -Property @{ Height = 'Auto' }))
 
-    $tags = New-Object Windows.Controls.TextBlock
-    $applicationStatus = Get-ApplicationStatus -Application $Application
-    $tags.Text = "$($Application.Tags)  •  $applicationStatus  •  LINK ONLY"
-    $tags.FontSize = 9
-    $tags.FontWeight = 'Bold'
-    $tags.Foreground = $Application.Accent
+    $header = New-Object Windows.Controls.Grid
+    $header.ColumnDefinitions.Add((New-Object Windows.Controls.ColumnDefinition -Property @{ Width = '*' }))
+    $header.ColumnDefinitions.Add((New-Object Windows.Controls.ColumnDefinition -Property @{ Width = 'Auto' }))
+    $header.ColumnDefinitions.Add((New-Object Windows.Controls.ColumnDefinition -Property @{ Width = 'Auto' }))
 
     $name = New-Object Windows.Controls.TextBlock
     $name.Text = $Application.Name
-    $name.FontSize = 18
+    $name.FontSize = 15
     $name.FontWeight = 'Bold'
     $name.Foreground = $script:Window.Resources['PrimaryText']
-    $name.Margin = '0,7,0,0'
-    [Windows.Controls.Grid]::SetRow($name, 1)
+    $name.VerticalAlignment = 'Center'
+    $name.TextTrimming = 'CharacterEllipsis'
+
+    $applicationStatus = Get-ApplicationStatus -Application $Application
+    $statusPill = New-Object Windows.Controls.Border
+    $statusPill.Background = if ($applicationStatus -in @('INSTALLED','AVAILABLE')) { '#0D3B28' } else { '#191A27' }
+    $statusPill.CornerRadius = '8'
+    $statusPill.Padding = '7,3'
+    $statusPill.Margin = '7,0,7,0'
+    [Windows.Controls.Grid]::SetColumn($statusPill, 1)
+    $statusLabel = New-Object Windows.Controls.TextBlock
+    $statusLabel.Text = if ($applicationStatus -eq 'INSTALLED') { '✓ INSTALLED' } elseif ($applicationStatus -eq 'AVAILABLE') { '✓ AVAILABLE' } else { '○ NOT INSTALLED' }
+    $statusLabel.FontSize = 8
+    $statusLabel.FontWeight = 'Bold'
+    $statusLabel.Foreground = if ($applicationStatus -in @('INSTALLED','AVAILABLE')) { '#22C55E' } else { $script:Window.Resources['MutedText'] }
+    $statusPill.Child = $statusLabel
+
+    $selectBox = New-Object Windows.Controls.CheckBox
+    $selectBox.Width = 20
+    $selectBox.Height = 20
+    $selectBox.ToolTip = 'Select for batch action'
+    $selectBox.VerticalAlignment = 'Center'
+    $selectBox.IsChecked = $script:SelectedApplicationIds.Contains($Application.Id)
+    [Windows.Controls.Grid]::SetColumn($selectBox, 2)
+    $setApplicationSelected = ${function:Set-ApplicationSelected}
+    $selectBox.Add_Checked({ & $setApplicationSelected -Id $Application.Id -Selected $true }.GetNewClosure())
+    $selectBox.Add_Unchecked({ & $setApplicationSelected -Id $Application.Id -Selected $false }.GetNewClosure())
+    $script:ApplicationSelectionControls.Add($selectBox)
+
+    $header.Children.Add($name) | Out-Null
+    $header.Children.Add($statusPill) | Out-Null
+    $header.Children.Add($selectBox) | Out-Null
 
     $description = New-Object Windows.Controls.TextBlock
     $description.Text = $Application.Description
     $description.FontSize = 11
     $description.TextWrapping = 'Wrap'
     $description.Foreground = $script:Window.Resources['SecondaryText']
-    $description.Margin = '0,8,0,8'
-    [Windows.Controls.Grid]::SetRow($description, 2)
+    $description.Margin = '0,9,0,4'
+    [Windows.Controls.Grid]::SetRow($description, 1)
 
-    $openButton = New-Object Windows.Controls.Button
-    $openButton.Content = 'OPEN PUBLISHER PAGE'
-    $openButton.HorizontalAlignment = 'Right'
-    $openButton.Background = $Application.Accent
-    $openButton.BorderBrush = $Application.Accent
-    $openButton.Foreground = '#050816'
-    $openButton.Padding = '14,5'
+    $tags = New-Object Windows.Controls.WrapPanel
+    $tags.Margin = '0,2,0,7'
+    foreach ($tag in $Application.Tags) { $tags.Children.Add((New-TagPill -Tag $tag)) | Out-Null }
+    [Windows.Controls.Grid]::SetRow($tags, 2)
+
+    $linkButton = New-Object Windows.Controls.Button
+    $linkButton.Content = "↗  $($Application.LinkLabel)"
+    $linkButton.HorizontalAlignment = 'Left'
+    $linkButton.Padding = '0,2'
+    $linkButton.Background = 'Transparent'
+    $linkButton.BorderBrush = 'Transparent'
+    $linkButton.Foreground = '#818CF8'
+    $linkButton.FontSize = 10
     $openReferenceUri = ${function:Open-ReferenceUri}
-    $openButton.Add_Click({ & $openReferenceUri -Name $Application.Name -Uri $Application.Uri }.GetNewClosure())
-    [Windows.Controls.Grid]::SetRow($openButton, 3)
+    $linkButton.Add_Click({ & $openReferenceUri -Name $Application.Name -Uri $Application.Uri }.GetNewClosure())
+    [Windows.Controls.Grid]::SetRow($linkButton, 3)
 
-    $grid.Children.Add($tags) | Out-Null
-    $grid.Children.Add($name) | Out-Null
+    $actions = New-Object Windows.Controls.WrapPanel
+    $actionCount = @($Application.Actions).Count
+    $actionWidth = if ($actionCount -gt 1) { 129 } else { 266 }
+    $startApplicationAction = ${function:Start-ApplicationAction}
+    foreach ($action in $Application.Actions) {
+        $actionButton = New-Object Windows.Controls.Button
+        $actionButton.Content = $action.Text
+        $actionButton.Width = $actionWidth
+        $actionButton.Height = 34
+        $actionButton.Padding = '7,4'
+        $actionButton.Margin = if ($actionCount -gt 1 -and $actions.Children.Count -eq 0) { '0,0,8,0' } else { '0' }
+        $actionButton.Background = if ($actions.Children.Count -eq 0) { '#635BFF' } else { $script:Window.Resources['ControlBackground'] }
+        $actionButton.BorderBrush = if ($actions.Children.Count -eq 0) { '#756DFF' } else { $script:Window.Resources['ThemeBorder'] }
+        $actionButton.Foreground = if ($actions.Children.Count -eq 0) { '#FFFFFF' } else { $script:Window.Resources['SecondaryText'] }
+        $actionButton.FontSize = 9
+        $actionButton.Add_Click({ & $startApplicationAction -Application $Application -Action $action }.GetNewClosure())
+        $script:RunButtons.Add($actionButton)
+        $actions.Children.Add($actionButton) | Out-Null
+    }
+    [Windows.Controls.Grid]::SetRow($actions, 5)
+
+    $grid.Children.Add($header) | Out-Null
     $grid.Children.Add($description) | Out-Null
-    $grid.Children.Add($openButton) | Out-Null
+    $grid.Children.Add($tags) | Out-Null
+    $grid.Children.Add($linkButton) | Out-Null
+    $grid.Children.Add($actions) | Out-Null
     $border.Child = $grid
     return $border
 }
@@ -1303,20 +1689,20 @@ function Render-Applications {
     $script:CardsHost.Children.Clear()
     $script:RunButtons.Clear()
     $script:SelectionControls.Clear()
-    if ($null -eq $script:InstalledApplicationNames) {
-        $script:InstalledApplicationNames = @(Get-InstalledApplicationNames)
-    }
+    $script:ApplicationSelectionControls.Clear()
     $query = $script:SearchBox.Text.Trim()
     $applications = @($script:ApplicationLinks | Where-Object {
         [string]::IsNullOrWhiteSpace($query) -or
         $_.Name.IndexOf($query, [StringComparison]::OrdinalIgnoreCase) -ge 0 -or
         $_.Description.IndexOf($query, [StringComparison]::OrdinalIgnoreCase) -ge 0 -or
-        $_.Tags.IndexOf($query, [StringComparison]::OrdinalIgnoreCase) -ge 0
+        ($_.Tags -join ' ').IndexOf($query, [StringComparison]::OrdinalIgnoreCase) -ge 0
     })
     foreach ($application in $applications) {
         $script:CardsHost.Children.Add((New-ApplicationCard -Application $application)) | Out-Null
     }
-    $script:ResultsLabel.Text = "$($applications.Count) publisher link(s), with read-only installed status where Windows reports it. This section never downloads or installs software."
+    $script:ResultsLabel.Text = "$($applications.Count) application card(s). ScriptBox stays portable; downloads and installs run only when selected."
+    Update-SelectionControls
+    if ($script:RunState -or $script:IsQueueRunning) { Set-RunButtonsEnabled -Enabled $false }
 }
 
 function New-FeatureCard {
@@ -1333,10 +1719,10 @@ function New-FeatureCard {
     $border.MinHeight = $MinHeight
     $border.Margin = '0,0,14,14'
     $border.Padding = '18'
-    $border.CornerRadius = '15'
+    $border.CornerRadius = '12'
     $border.Background = $script:Window.Resources['CardBackground']
-    $border.BorderBrush = $Accent
-    $border.BorderThickness = '1,1,1,2'
+    $border.BorderBrush = $script:Window.Resources['ThemeBorder']
+    $border.BorderThickness = '1'
 
     $stack = New-Object Windows.Controls.StackPanel
     $heading = New-Object Windows.Controls.TextBlock
@@ -1425,6 +1811,7 @@ function Render-NetworkTools {
     $script:CardsHost.Children.Clear()
     $script:RunButtons.Clear()
     $script:SelectionControls.Clear()
+    $script:ApplicationSelectionControls.Clear()
 
     $pingCard = New-FeatureCard -Title 'Ping' -Description 'Send ICMP echo requests with a configurable count.' -Accent '#22D3EE'
     Add-FeatureLabel -HostPanel $pingCard.Body -Text 'Address'
@@ -1543,6 +1930,7 @@ function Render-Diagnostics {
     $script:CardsHost.Children.Clear()
     $script:RunButtons.Clear()
     $script:SelectionControls.Clear()
+    $script:ApplicationSelectionControls.Clear()
     $diagnosticCard = New-FeatureCard -Title 'Network Diagnostics' `
         -Description 'Read-only gateway, internet, DNS, TCP, and HTTPS checks. Detailed KVM diagnostics remain available in Scripts.' `
         -Accent '#38BDF8' -Width 820 -MinHeight 300
@@ -1635,6 +2023,7 @@ function Render-SystemInfo {
     $script:CardsHost.Children.Clear()
     $script:RunButtons.Clear()
     $script:SelectionControls.Clear()
+    $script:ApplicationSelectionControls.Clear()
     try {
         if (-not $script:SystemInfoLoaded -or $null -eq $script:SystemInfoSnapshot) {
             $script:ResultsLabel.Text = 'Gathering system information...'
@@ -1665,9 +2054,9 @@ function Set-TerminalMode {
     param([Parameter(Mandatory)][ValidateSet('Normal', 'Collapsed', 'Expanded')][string]$Mode)
     $script:TerminalMode = $Mode
     switch ($Mode) {
-        'Collapsed' { $script:TerminalRow.Height = New-Object Windows.GridLength(58) }
-        'Expanded'  { $script:TerminalRow.Height = New-Object Windows.GridLength(420) }
-        default     { $script:TerminalRow.Height = New-Object Windows.GridLength(222) }
+        'Collapsed' { $script:TerminalRow.Height = New-Object Windows.GridLength(48) }
+        'Expanded'  { $script:TerminalRow.Height = New-Object Windows.GridLength(380) }
+        default     { $script:TerminalRow.Height = New-Object Windows.GridLength(170) }
     }
     $script:TerminalOutput.Visibility = if ($Mode -eq 'Collapsed') { 'Collapsed' } else { 'Visible' }
 }
@@ -1694,14 +2083,14 @@ function New-Card {
     param([Parameter(Mandatory)]$Item)
 
     $border = New-Object Windows.Controls.Border
-    $border.Width = 342
-    $border.Height = 194
+    $border.Width = 304
+    $border.Height = 202
     $border.Margin = '0,0,14,14'
     $border.Padding = '18'
-    $border.CornerRadius = '15'
+    $border.CornerRadius = '12'
     $border.Background = $script:Window.Resources['CardBackground']
-    $border.BorderBrush = $Item.Accent
-    $border.BorderThickness = '1,1,1,2'
+    $border.BorderBrush = $script:Window.Resources['ThemeBorder']
+    $border.BorderThickness = '1'
 
     $grid = New-Object Windows.Controls.Grid
     $grid.RowDefinitions.Add((New-Object Windows.Controls.RowDefinition -Property @{ Height = 'Auto' }))
@@ -1718,7 +2107,7 @@ function New-Card {
 
     $name = New-Object Windows.Controls.TextBlock
     $name.Text = $Item.Name
-    $name.FontSize = 18
+    $name.FontSize = 16
     $name.FontWeight = 'Bold'
     $name.Foreground = $script:Window.Resources['PrimaryText']
     $name.Margin = '0,7,0,0'
@@ -1790,9 +2179,9 @@ function New-Card {
     $runButton.Content = 'RUN'
     $runButton.Height = 29
     $runButton.Padding = '14,4'
-    $runButton.Background = $Item.Accent
-    $runButton.BorderBrush = $Item.Accent
-    $runButton.Foreground = '#050816'
+    $runButton.Background = '#635BFF'
+    $runButton.BorderBrush = '#756DFF'
+    $runButton.Foreground = '#FFFFFF'
     $runButton.ToolTip = 'Run this script'
     $runButton.Add_Click({ & $startCatalogItem -Item $Item }.GetNewClosure())
     $script:RunButtons.Add($runButton)
@@ -1814,6 +2203,7 @@ function Render-Cards {
     $script:CardsHost.Children.Clear()
     $script:RunButtons.Clear()
     $script:SelectionControls.Clear()
+    $script:ApplicationSelectionControls.Clear()
     $query = $script:SearchBox.Text.Trim()
     $filtered = @($script:Catalog | Where-Object {
         (($script:ActiveCategory -eq 'All scripts' -and $_.ShowInAllScripts) -or $_.Category -eq $script:ActiveCategory) -and
@@ -1867,6 +2257,8 @@ function Start-SelectedItems {
     $script:RunQueue.Clear()
     $script:QueueResults.Clear()
     foreach ($item in $items) { $script:RunQueue.Enqueue($item) }
+    $script:QueueTitle = 'Selected scripts'
+    $script:QueueNoun = 'scripts'
     $script:IsQueueRunning = $true
     $script:SelectedIds.Clear()
     Render-Cards
@@ -1888,12 +2280,16 @@ function Start-NextQueuedItem {
     $script:IsQueueRunning = $false
     $script:TerminalStatus.Text = '  READY'
     $script:TerminalStatus.Foreground = '#34D399'
+    if ($script:QueueTitle -eq 'Selected applications') {
+        $script:ApplicationStatusCache = @{}
+        if ($script:ActiveSection -eq 'Applications') { Render-Applications }
+    }
     Set-RunButtonsEnabled -Enabled $true
     Update-SelectionControls
 
     $results = @($script:QueueResults)
     if ($results.Count -eq 0) {
-        Add-TerminalLine 'The queue finished without running a script.'
+        Add-TerminalLine 'The queue finished without running a task.'
         return
     }
 
@@ -1906,13 +2302,13 @@ function Start-NextQueuedItem {
     $failed = @($results | Where-Object ExitCode -ne 0).Count
     $state = if ($failed -gt 0) { 'Error' } elseif ($warning -gt 0 -or $problem -gt 0) { 'Warning' } else { 'Success' }
     $headline = if ($failed -gt 0) { "$failed of $($results.Count) tasks need attention" } elseif ($warning -gt 0 -or $problem -gt 0) { 'Queue completed with items to review' } else { 'All selected tasks completed successfully' }
-    $summary = "ScriptBox completed $($results.Count) selected tasks sequentially. Each line below explains the final state."
+    $summary = "ScriptBox completed $($results.Count) selected $($script:QueueNoun) sequentially. Each line below explains the final state."
     $output = @($results | ForEach-Object {
         $label = if ($_.ExitCode -ne 0) { '[ERROR]' } elseif ($_.WarningCount -gt 0 -or $_.ProblemCount -gt 0) { '[WARNING]' } else { '[SUCCESS]' }
         "$label $($_.Item.Name) - $($_.Summary)"
     }) -join [Environment]::NewLine
-    Add-TerminalLine "Selected script queue finished: $($results.Count) task(s), $failed failure(s)."
-    Show-ScriptBoxResult -Title 'Selected scripts' -Headline $headline -Summary $summary -Output $output `
+    Add-TerminalLine "$($script:QueueTitle) queue finished: $($results.Count) task(s), $failed failure(s)."
+    Show-ScriptBoxResult -Title $script:QueueTitle -Headline $headline -Summary $summary -Output $output `
         -GoodCount $good -WarningCount $warning -ProblemCount $problem -State $state
     $script:QueueResults.Clear()
 }
@@ -1955,15 +2351,22 @@ function Select-Section {
     }
 
     $isScripts = $Section -eq 'Scripts'
+    $hasBatchControls = $Section -in @('Applications', 'Scripts')
     $canSearch = $Section -in @('Applications', 'Scripts')
     $script:ScriptTabsPanel.Visibility = if ($isScripts) { 'Visible' } else { 'Collapsed' }
-    $script:RunSelectedButton.Visibility = if ($isScripts) { 'Visible' } else { 'Collapsed' }
-    $script:ClearSelectionButton.Visibility = if ($isScripts) { 'Visible' } else { 'Collapsed' }
+    $script:RunSelectedButton.Visibility = if ($hasBatchControls) { 'Visible' } else { 'Collapsed' }
+    $script:ClearSelectionButton.Visibility = if ($hasBatchControls) { 'Visible' } else { 'Collapsed' }
     $script:SearchPanel.Visibility = if ($canSearch) { 'Visible' } else { 'Collapsed' }
-    $script:PageTitle.Text = $Section
+    $script:PageTitle.Text = switch ($Section) {
+        'Applications'  { 'Application Installer' }
+        'Network Tools' { 'Network Tools' }
+        'Diagnostics'   { 'Network Diagnostics' }
+        'System Info'   { 'System' }
+        default         { 'Scripts' }
+    }
 
     switch ($Section) {
-        'Applications'  { $script:ResultsLabel.Text = 'Publisher references only—no automatic downloads or installs.' }
+        'Applications'  { $script:ResultsLabel.Text = 'Install, download, or run applications on demand.' }
         'Scripts'       { $script:ResultsLabel.Text = 'Safe, visible execution with live output.' }
         'Network Tools' { $script:ResultsLabel.Text = 'Built-in Windows network tools.' }
         'Diagnostics'   { $script:ResultsLabel.Text = 'Read-only network health checks.' }
@@ -1974,14 +2377,40 @@ function Select-Section {
 }
 
 $sections = @('Applications', 'Scripts', 'Network Tools', 'Diagnostics', 'System Info')
+$sectionIcons = @{ Applications='▣'; Scripts='⌘'; 'Network Tools'='◔'; Diagnostics='◎'; 'System Info'='⚙' }
+$sectionShortcuts = @{ Applications='Ctrl+1'; Scripts='Ctrl+2'; 'Network Tools'='Ctrl+3'; Diagnostics='Ctrl+4'; 'System Info'='Ctrl+5' }
 foreach ($sectionName in $sections) {
     $sectionButton = New-Object Windows.Controls.Button
-    $sectionButton.Content = $sectionName.ToUpperInvariant()
     $sectionButton.Tag = $sectionName
-    $sectionButton.Height = 42
+    $sectionButton.Height = 50
     $sectionButton.HorizontalContentAlignment = 'Left'
     $sectionButton.Margin = '0,0,0,8'
-    $sectionButton.Padding = '13,8'
+    $sectionButton.Padding = '12,8'
+
+    $navContent = New-Object Windows.Controls.Grid
+    $navContent.Width = 172
+    $navContent.ColumnDefinitions.Add((New-Object Windows.Controls.ColumnDefinition -Property @{ Width = 26 }))
+    $navContent.ColumnDefinitions.Add((New-Object Windows.Controls.ColumnDefinition -Property @{ Width = '*' }))
+    $navContent.ColumnDefinitions.Add((New-Object Windows.Controls.ColumnDefinition -Property @{ Width = 'Auto' }))
+    $navIcon = New-Object Windows.Controls.TextBlock
+    $navIcon.Text = $sectionIcons[$sectionName]
+    $navIcon.FontSize = 15
+    $navIcon.VerticalAlignment = 'Center'
+    $navLabel = New-Object Windows.Controls.TextBlock
+    $navLabel.Text = $sectionName
+    $navLabel.FontSize = 12
+    $navLabel.VerticalAlignment = 'Center'
+    [Windows.Controls.Grid]::SetColumn($navLabel, 1)
+    $navShortcut = New-Object Windows.Controls.TextBlock
+    $navShortcut.Text = $sectionShortcuts[$sectionName]
+    $navShortcut.FontSize = 8
+    $navShortcut.Foreground = $script:Window.Resources['MutedText']
+    $navShortcut.VerticalAlignment = 'Center'
+    [Windows.Controls.Grid]::SetColumn($navShortcut, 2)
+    $navContent.Children.Add($navIcon) | Out-Null
+    $navContent.Children.Add($navLabel) | Out-Null
+    $navContent.Children.Add($navShortcut) | Out-Null
+    $sectionButton.Content = $navContent
     $sectionButton.Add_Click({
         param($sender, $eventArgs)
         Select-Section -Section ([string]$sender.Tag)
@@ -2006,9 +2435,16 @@ foreach ($categoryName in $categories) {
     $script:CategoryHost.Children.Add($button) | Out-Null
 }
 
-$script:SearchBox.Add_TextChanged({ Render-ActiveSection })
-$script:RunSelectedButton.Add_Click({ Start-SelectedItems })
-$script:ClearSelectionButton.Add_Click({ Clear-SelectedItems })
+$script:SearchBox.Add_TextChanged({
+    $script:SearchHint.Visibility = if ([string]::IsNullOrWhiteSpace($script:SearchBox.Text)) { 'Visible' } else { 'Collapsed' }
+    Render-ActiveSection
+})
+$script:RunSelectedButton.Add_Click({
+    if ($script:ActiveSection -eq 'Applications') { Start-SelectedApplications } else { Start-SelectedItems }
+})
+$script:ClearSelectionButton.Add_Click({
+    if ($script:ActiveSection -eq 'Applications') { Clear-SelectedApplications } else { Clear-SelectedItems }
+})
 $script:ThemeToggleButton.Add_Click({
     Set-ScriptBoxTheme -Theme $(if ($script:IsDarkTheme) { 'Light' } else { 'Dark' })
     Select-Section -Section $script:ActiveSection
@@ -2118,6 +2554,10 @@ $script:OutputTimer.Add_Tick({
                 $script:QueueResults.Add($result) | Out-Null
                 Start-NextQueuedItem
             } else {
+                if ($finishedState.Item.Category -eq 'Applications') {
+                    $script:ApplicationStatusCache = @{}
+                    if ($script:ActiveSection -eq 'Applications') { Render-Applications }
+                }
                 Set-RunButtonsEnabled -Enabled $true
                 Update-SelectionControls
                 if ($finishedState.Item.ResultMode -eq 'Summary') {
@@ -2161,6 +2601,7 @@ if ($localIcon) {
 
 $script:PrivilegeLabel.Text = if ($script:IsAdministrator) { '● RUNNING AS ADMIN' } else { '● STANDARD SESSION' }
 $script:PrivilegeLabel.Foreground = if ($script:IsAdministrator) { '#FDE68A' } else { '#A7F3D0' }
+$script:VersionLabel.Text = "PORTABLE  •  v$($script:Version)"
 $script:ElevateButton.Visibility = if ($script:IsAdministrator) { 'Collapsed' } else { 'Visible' }
 $script:Window.Title = "ScriptBox $($script:Version)"
 
@@ -2181,7 +2622,7 @@ Set-ScriptBoxTheme -Theme 'Dark'
 Select-Category -Category 'All scripts'
 Select-Section -Section 'Scripts'
 Add-TerminalLine "ScriptBox $($script:Version) ready. Use the left sections, or press Ctrl+1 through Ctrl+5 to move between them."
-Add-TerminalLine 'Applications contains publisher links only; it never downloads or installs software.'
+Add-TerminalLine 'Applications offers explicit portable downloads, installers, and run actions; ScriptBox itself is not installed.'
 Add-TerminalLine 'In Scripts, select i for details, RUN for one task, or select several cards and RUN SELECTED.'
 Add-TerminalLine 'Catalog scripts are downloaded on demand only when their run begins.'
 Add-TerminalLine 'Temporary runtime data will be removed when this window closes.'
@@ -2199,10 +2640,30 @@ if ($env:SCRIPTBOX_TEST_MODE -eq '1') {
     if ($script:ActiveSection -ne 'Applications' -or
         $script:CardsHost.Children.Count -ne $script:ApplicationLinks.Count -or
         $script:ScriptTabsPanel.Visibility -ne 'Collapsed' -or
-        $script:RunSelectedButton.Visibility -ne 'Collapsed' -or
-        $script:SearchPanel.Visibility -ne 'Visible') {
-        throw 'Non-installing Applications section validation failed.'
+        $script:RunSelectedButton.Visibility -ne 'Visible' -or
+        $script:SearchPanel.Visibility -ne 'Visible' -or
+        $script:ApplicationSelectionControls.Count -ne $script:ApplicationLinks.Count -or
+        $script:RunButtons.Count -ne 15) {
+        throw 'Application Installer section validation failed.'
     }
+    foreach ($application in $script:ApplicationLinks) {
+        foreach ($action in $application.Actions) {
+            $actionTokens = $null
+            $actionErrors = $null
+            $actionScript = New-ApplicationActionScript -Application $application -Action $action
+            [void][Management.Automation.Language.Parser]::ParseInput($actionScript, [ref]$actionTokens, [ref]$actionErrors)
+            if ($actionErrors.Count -gt 0) {
+                throw "Application action payload does not parse: $($application.Name) / $($action.Text): $($actionErrors.Message -join '; ')"
+            }
+        }
+    }
+    $script:ApplicationSelectionControls[0].IsChecked = $true
+    if ($script:SelectedApplicationIds.Count -ne 1 -or
+        $script:RunSelectedButton.Content -ne 'INSTALL SELECTED (1)' -or
+        -not $script:RunSelectedButton.IsHitTestVisible) {
+        throw 'Application batch-selection validation failed.'
+    }
+    Clear-SelectedApplications
     Select-Section -Section 'Scripts'
     if ($script:ActiveSection -ne 'Scripts' -or
         $script:ScriptTabsPanel.Visibility -ne 'Visible' -or
@@ -2292,7 +2753,7 @@ if ($env:SCRIPTBOX_TEST_MODE -eq '1') {
         -Output $friendlyTest.Output -GoodCount 1 -WarningCount 1 -State Warning
 
     if ($script:RunSelectedButton.IsHitTestVisible -or $script:ClearSelectionButton.IsHitTestVisible -or
-        $script:RunSelectedButton.Opacity -ge 1 -or $script:RunSelectedButton.Background.Color.ToString() -ne '#FF7C3AED') {
+        $script:RunSelectedButton.Opacity -ge 1 -or $script:RunSelectedButton.Background.Color.ToString() -ne '#FF635BFF') {
         throw 'Themed inactive selection control validation failed.'
     }
     $script:SelectionControls[0].IsChecked = $true
@@ -2312,7 +2773,7 @@ if ($env:SCRIPTBOX_TEST_MODE -eq '1') {
     }
     Clear-SelectedItems
     if ($script:SelectedIds.Count -ne 0 -or $script:RunSelectedButton.IsHitTestVisible -or
-        $script:ClearSelectionButton.IsHitTestVisible -or $script:ClearSelectionButton.Background.Color.ToString() -ne '#FF151D35') {
+        $script:ClearSelectionButton.IsHitTestVisible -or $script:ClearSelectionButton.Background.Color.ToString() -ne '#FF1A1A29') {
         throw 'Themed cleared selection control validation failed.'
     }
 
@@ -2368,7 +2829,7 @@ if ($env:SCRIPTBOX_TEST_MODE -eq '1') {
         throw 'Sequential queue validation failed.'
     }
 
-    Write-Output "ScriptBox validation passed: five shell sections, $($script:Catalog.Count) lazy catalog items, top-tab navigation, matching dialogs, selection controls, sequential queue, and output bridge."
+    Write-Output "ScriptBox validation passed: InvokeX-style application actions, five shell sections, $($script:Catalog.Count) lazy catalog items, top-tab navigation, themes, selection controls, sequential queue, and output bridge."
     $script:OutputTimer.Stop()
     Remove-ScriptBoxTempRoot
     return

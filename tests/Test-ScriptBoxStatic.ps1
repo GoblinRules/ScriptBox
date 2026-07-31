@@ -14,6 +14,7 @@ $repairShellPath = Join-Path $scriptsPath 'Repair-PowerMenuAndSystemTray.ps1'
 $disableAudioPath = Join-Path $scriptsPath 'Disable-MachineAudio.ps1'
 $usbDevicesPath = Join-Path $scriptsPath 'Show-ConnectedUSBDevices.ps1'
 $wolWatcherPath = Join-Path $scriptsPath 'Watch-WakeOnLanPackets.ps1'
+$hpBiosPath = Join-Path $scriptsPath 'Configure-HPBIOS.ps1'
 $hpG3G5WolKvmPath = Join-Path $scriptsPath 'Configure-HPEliteDesk800G5WolKvm.ps1'
 $files = @($launcherPath) + @(Get-ChildItem -LiteralPath $scriptsPath -Filter '*.ps1' -File | Select-Object -ExpandProperty FullName)
 
@@ -104,7 +105,11 @@ foreach ($requiredShellText in @(
     'function Render-SystemInfo',
     'function Set-ScriptBoxTheme',
     'function Set-TerminalMode',
-    'function Get-InstalledApplicationNames',
+    'function Get-ApplicationStatus',
+    'function New-ApplicationActionScript',
+    'function Start-ApplicationAction',
+    'function Start-SelectedApplications',
+    'INSTALL SELECTED',
     "'D1' { Select-Section -Section 'Applications'",
     "'D5' { Select-Section -Section 'System Info'"
 )) {
@@ -112,19 +117,25 @@ foreach ($requiredShellText in @(
         throw "The lightweight multi-section shell is missing: $requiredShellText"
     }
 }
-$applicationDirectory = [regex]::Match(
-    $launcherSource,
-    '(?s)\$script:ApplicationLinks\s*=\s*@\(.*?\r?\n\)'
-).Value
-if ([string]::IsNullOrWhiteSpace($applicationDirectory) -or
-    $applicationDirectory -notmatch "Uri = 'https://" -or
-    $applicationDirectory -notmatch "Detect = '" -or
-    $applicationDirectory -match 'Invoke-WebRequest|Start-CatalogItem|install\.ps1') {
-    throw 'Applications must remain an HTTPS, read-only reference directory with no download or install behavior.'
+foreach ($requiredApplicationText in @(
+    "Id='trip'",
+    "Text='Download Portable'; Type='Portable'",
+    "Text='Download Installer'; Type='Exe'",
+    "Id='pyautoclicker'",
+    "Type='RemoteScript'",
+    "Type='RemoteWindow'",
+    "Type='Msi'",
+    'Get-AuthenticodeSignature',
+    'Start-Process -FilePath `$downloadPath -Wait -PassThru',
+    'ScriptBox itself remains portable',
+    'downloads and installs run only when selected'
+)) {
+    if ($launcherSource -notmatch [regex]::Escape($requiredApplicationText)) {
+        throw "The portable Application Installer is missing: $requiredApplicationText"
+    }
 }
-if ($launcherSource -notmatch 'This section never downloads or installs software' -or
-    $launcherSource -notmatch 'ScriptBox did not download or install anything') {
-    throw 'The non-installing Applications boundary must be explicit in both the page and terminal.'
+if ($launcherSource -notmatch "if \(-not \(Show-ScriptBoxDialog -Title.+-Buttons YesNo") {
+    throw 'Each single application action must require explicit confirmation.'
 }
 
 $launcherTokens = $null
@@ -245,6 +256,27 @@ foreach ($requiredWolText in @(
 }
 if ($wolWatcherSource -notmatch 'DispatcherTimer' -or $wolWatcherSource -notmatch 'ShowDialog') {
     throw 'The Wake-on-LAN watcher must poll real-time output in a popup.'
+}
+
+$hpBiosSource = Get-Content -Raw -LiteralPath $hpBiosPath
+foreach ($requiredHpBiosText in @(
+    'Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force -Scope AllUsers',
+    'Install-Module -Name PackageManagement -MinimumVersion 1.4.8.1 -Repository PSGallery',
+    'Install-Module -Name HPCMSL -Repository PSGallery -Scope AllUsers -Force -AllowClobber -AcceptLicense',
+    'Import-Module HPCMSL -Force -ErrorAction Stop',
+    'Get-HPBIOSSettingsList -NoReadonly',
+    'function Restore-PowerShellGalleryPolicy',
+    '$script:PSGalleryOriginalState',
+    'Set-PSRepository -Name PSGallery -InstallationPolicy $originalPolicy',
+    'Unregister-PSRepository -Name PSGallery',
+    "Get-Command -Name 'pwsh.exe'",
+    'PowerShell 7 fallback',
+    'finally {',
+    'Restore-PowerShellGalleryPolicy'
+)) {
+    if ($hpBiosSource -notmatch [regex]::Escape($requiredHpBiosText)) {
+        throw "The general HP BIOS workflow is missing prerequisite or PSGallery restoration behavior: $requiredHpBiosText"
+    }
 }
 
 $hpG3G5WolKvmSource = Get-Content -Raw -LiteralPath $hpG3G5WolKvmPath
