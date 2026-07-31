@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    Repairs Windows shell policy after the legacy Hide Shutdown Options script.
+    Repairs Windows shell policy and restores machine audio services.
 
 .DESCRIPTION
     Restores the four Windows PolicyManager Start defaults changed by older
@@ -10,14 +10,20 @@
 
     ScriptBox never set the NoTrayItemsDisplay policy that directly hides the
     notification area, so this repair leaves unrelated organization-managed
-    notification-area policy unchanged. A sign-out or restart reloads the
-    affected Windows 11 shell surfaces.
+    notification-area policy unchanged.
+
+    Also reverses Disable Machine Audio by removing its local fDisableCam
+    policy, returning Windows Audio Endpoint Builder and Windows Audio to
+    Automatic, and starting both services in dependency order. A sign-out or
+    restart reloads the affected Windows 11 shell surfaces.
 #>
 
 [CmdletBinding()]
 param()
 
 $ErrorActionPreference = 'Stop'
+$terminalServicesPolicyPath = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services'
+$audioServiceNames = @('AudioEndpointBuilder', 'Audiosrv')
 
 function Write-Log {
     param(
@@ -159,8 +165,51 @@ try {
         Write-Log WARNING "Could not repair the Default User profile: $($_.Exception.Message)"
     }
 
-    Write-Log SUCCESS 'Legacy ScriptBox power and shell policy changes were removed.'
-    Write-Log WARNING 'Sign out or restart Windows to reload the Start menu, power menu, and notification area.'
+    if (Test-Path -LiteralPath $terminalServicesPolicyPath) {
+        $terminalServicesPolicy = Get-ItemProperty `
+            -LiteralPath $terminalServicesPolicyPath `
+            -ErrorAction Stop
+        if ($terminalServicesPolicy.PSObject.Properties.Name -contains 'fDisableCam') {
+            Remove-ItemProperty `
+                -LiteralPath $terminalServicesPolicyPath `
+                -Name 'fDisableCam' `
+                -ErrorAction Stop
+            Write-Log INFO 'Local Remote Desktop playback block removed: fDisableCam'
+        }
+        else {
+            Write-Log INFO 'Local Remote Desktop playback policy was already clear.'
+        }
+    }
+
+    foreach ($serviceName in $audioServiceNames) {
+        Set-Service -Name $serviceName -StartupType Automatic -ErrorAction Stop
+    }
+    foreach ($serviceName in $audioServiceNames) {
+        Start-Service -Name $serviceName -ErrorAction Stop
+        $service = Get-Service -Name $serviceName -ErrorAction Stop
+        $service.WaitForStatus(
+            [ServiceProcess.ServiceControllerStatus]::Running,
+            [TimeSpan]::FromSeconds(15)
+        )
+    }
+
+    $failedAudioServices = @($audioServiceNames | Where-Object {
+        $service = Get-CimInstance -ClassName Win32_Service -Filter "Name='$_'"
+        -not $service -or $service.StartMode -ne 'Auto' -or $service.State -ne 'Running'
+    })
+    $audioPolicyStillPresent = $false
+    if (Test-Path -LiteralPath $terminalServicesPolicyPath) {
+        $policyAfter = Get-ItemProperty `
+            -LiteralPath $terminalServicesPolicyPath `
+            -ErrorAction Stop
+        $audioPolicyStillPresent = $policyAfter.PSObject.Properties.Name -contains 'fDisableCam'
+    }
+    if ($failedAudioServices.Count -gt 0 -or $audioPolicyStillPresent) {
+        throw 'The audio restoration check failed. Both audio services must be Automatic/Running and fDisableCam must be absent.'
+    }
+
+    Write-Log SUCCESS 'Legacy ScriptBox power/shell policy changes were removed and machine audio was restored.'
+    Write-Log WARNING 'Sign out or restart Windows to reload the Start menu, power menu, notification area, and Quick Settings.'
     return
 }
 catch {

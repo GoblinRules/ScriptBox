@@ -11,6 +11,7 @@ $scriptsPath = Join-Path $repositoryRoot 'scripts'
 $resetPath = Join-Path $scriptsPath 'Reset-WindowsRemoveEverything.ps1'
 $hideShutdownPath = Join-Path $scriptsPath 'Hide-ShutdownOptions.ps1'
 $repairShellPath = Join-Path $scriptsPath 'Repair-PowerMenuAndSystemTray.ps1'
+$disableAudioPath = Join-Path $scriptsPath 'Disable-MachineAudio.ps1'
 $usbDevicesPath = Join-Path $scriptsPath 'Show-ConnectedUSBDevices.ps1'
 $wolWatcherPath = Join-Path $scriptsPath 'Watch-WakeOnLanPackets.ps1'
 $hpG3G5WolKvmPath = Join-Path $scriptsPath 'Configure-HPEliteDesk800G5WolKvm.ps1'
@@ -87,6 +88,10 @@ $launcherSource = Get-Content -Raw -LiteralPath $launcherPath
 if ($launcherSource -notmatch "-RequiredInputValue 'ERASE ALL INTERNAL DATA'") {
     throw 'The erase workflow must validate its exact confirmation phrase inside the launcher.'
 }
+if ($launcherSource -notmatch "-Name 'Repair System Tray and Audio'" -or
+    $launcherSource -match "-Id 'restore-machine-audio'") {
+    throw 'Fixes must expose one combined Repair System Tray and Audio card.'
+}
 
 $launcherTokens = $null
 $launcherErrors = $null
@@ -152,6 +157,36 @@ $repairShellSource = Get-Content -Raw -LiteralPath $repairShellPath
 if ($repairShellSource -notmatch 'PolicyManager\\default' -or
     $repairShellSource -notmatch "Remove-ItemProperty.+Name 'NoClose'") {
     throw 'The Windows shell repair must reverse both legacy ScriptBox policy changes.'
+}
+foreach ($requiredRepairAudioText in @(
+    "@('AudioEndpointBuilder', 'Audiosrv')",
+    "-Name 'fDisableCam'",
+    'Set-Service -Name $serviceName -StartupType Automatic',
+    'Start-Service -Name $serviceName',
+    "StartMode -ne 'Auto'",
+    "State -ne 'Running'"
+)) {
+    if ($repairShellSource -notmatch [regex]::Escape($requiredRepairAudioText)) {
+        throw "The system-tray repair is missing required audio restoration behavior: $requiredRepairAudioText"
+    }
+}
+
+$disableAudioSource = Get-Content -Raw -LiteralPath $disableAudioPath
+foreach ($requiredDisableAudioText in @(
+    "`$disabledAudioServiceName = 'Audiosrv'",
+    "`$endpointServiceName = 'AudioEndpointBuilder'",
+    'Set-Service -Name $endpointServiceName -StartupType Automatic',
+    'Start-Service -Name $endpointServiceName',
+    'Set-Service -Name $disabledAudioServiceName -StartupType Disabled',
+    'Stop-Service -Name $disabledAudioServiceName'
+)) {
+    if ($disableAudioSource -notmatch [regex]::Escape($requiredDisableAudioText)) {
+        throw "Disable Machine Audio is missing tray-safe behavior: $requiredDisableAudioText"
+    }
+}
+if ($disableAudioSource -match [regex]::Escape("Set-Service -Name 'AudioEndpointBuilder' -StartupType Disabled") -or
+    $disableAudioSource -match [regex]::Escape("Stop-Service -Name 'AudioEndpointBuilder'")) {
+    throw 'Disable Machine Audio must not disable or stop Audio Endpoint Builder.'
 }
 
 $usbDevicesSource = Get-Content -Raw -LiteralPath $usbDevicesPath
