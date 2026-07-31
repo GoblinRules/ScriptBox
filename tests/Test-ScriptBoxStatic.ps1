@@ -92,6 +92,40 @@ if ($launcherSource -notmatch "-Name 'Repair System Tray and Audio'" -or
     $launcherSource -match "-Id 'restore-machine-audio'") {
     throw 'Fixes must expose one combined Repair System Tray and Audio card.'
 }
+foreach ($requiredShellText in @(
+    "`$script:ActiveSection = 'Scripts'",
+    'x:Name="SectionHost"',
+    'x:Name="ScriptTabsPanel"',
+    "@('Applications', 'Scripts', 'Network Tools', 'Diagnostics', 'System Info')",
+    'function Select-Section',
+    'function Render-Applications',
+    'function Render-NetworkTools',
+    'function Render-Diagnostics',
+    'function Render-SystemInfo',
+    'function Set-ScriptBoxTheme',
+    'function Set-TerminalMode',
+    'function Get-InstalledApplicationNames',
+    "'D1' { Select-Section -Section 'Applications'",
+    "'D5' { Select-Section -Section 'System Info'"
+)) {
+    if ($launcherSource -notmatch [regex]::Escape($requiredShellText)) {
+        throw "The lightweight multi-section shell is missing: $requiredShellText"
+    }
+}
+$applicationDirectory = [regex]::Match(
+    $launcherSource,
+    '(?s)\$script:ApplicationLinks\s*=\s*@\(.*?\r?\n\)'
+).Value
+if ([string]::IsNullOrWhiteSpace($applicationDirectory) -or
+    $applicationDirectory -notmatch "Uri = 'https://" -or
+    $applicationDirectory -notmatch "Detect = '" -or
+    $applicationDirectory -match 'Invoke-WebRequest|Start-CatalogItem|install\.ps1') {
+    throw 'Applications must remain an HTTPS, read-only reference directory with no download or install behavior.'
+}
+if ($launcherSource -notmatch 'This section never downloads or installs software' -or
+    $launcherSource -notmatch 'ScriptBox did not download or install anything') {
+    throw 'The non-installing Applications boundary must be explicit in both the page and terminal.'
+}
 
 $launcherTokens = $null
 $launcherErrors = $null

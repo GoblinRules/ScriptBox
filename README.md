@@ -1,6 +1,6 @@
 # ScriptBox
 
-ScriptBox is a portable Windows PowerShell launcher with a friendly, category-based UI. Every script has an information view, clear privilege and policy badges, confirmation, automatic UAC elevation when required, live terminal output, and a plain-language result window.
+ScriptBox is a portable Windows PowerShell operations console with an InvokeX-inspired workflow and a much lighter WPF implementation. It provides application references, script execution, network tools, diagnostics, and system information without installing ScriptBox itself or carrying an Electron/Node runtime.
 
 ![ScriptBox icon](assets/icon.png)
 
@@ -12,11 +12,21 @@ Open Windows PowerShell and run:
 irm https://raw.githubusercontent.com/GoblinRules/ScriptBox/main/ScriptBox.ps1 | iex
 ```
 
-ScriptBox does not install itself. The initial launcher fetches only the UI/catalog and icon—not every catalog script. A script file is downloaded into memory only after the user selects **RUN** and accepts its confirmation. Temporary output is kept in a uniquely named Windows temporary folder and removed when the app closes. Scripts launched from the catalog may make their own documented system changes or install/open third-party tools.
+ScriptBox does not install itself. The initial launcher fetches only the UI/catalog and icon—not every catalog script. A script file is downloaded into memory only after the user selects **RUN** and accepts its confirmation. Temporary output is kept in a uniquely named Windows temporary folder and removed when the app closes. The **Applications** section is read-only: it can report registered install status and open HTTPS publisher pages, but it never downloads or installs an application. Scripts launched deliberately from the **Scripts** catalogue may make their own documented system changes or install/open third-party tools.
 
 > `irm | iex` executes code from the internet. Review [`ScriptBox.ps1`](ScriptBox.ps1) and the source URLs shown by each script before running it.
 
-## Included sections
+## Shell sections
+
+- **Applications** — searchable publisher references with read-only installed/not-detected status where Windows exposes it. Opening a card only opens its HTTPS publisher page.
+- **Scripts** — the complete existing ScriptBox catalogue. Script areas are tabs across the top, while the left navigation stays focused on the major tools.
+- **Network Tools** — ping, traceroute, latency statistics, common IP/DNS commands, and native Windows shortcuts.
+- **Diagnostics** — one-click read-only gateway, internet, DNS, TCP 443, and HTTPS checks. The detailed KVM tools remain available under Scripts.
+- **System Info** — read-only operating-system, hardware, firmware, storage, and active-network details.
+
+Use `Ctrl+1` through `Ctrl+5` to switch sections, `Ctrl+K` to focus search, `Ctrl+T` to expand the terminal, and Ctrl+backtick to collapse it. The header switches between dark and light themes. The sidebar shows elevation status and provides shortcuts to Control Panel, Settings, and Windows Terminal.
+
+### Script tabs
 
 - **Power** — restart, always-on power, and locked-session network availability.
 - **Warning - Use With Caution** — shut down Windows or schedule an unattended protected erase-and-reinstall workflow.
@@ -31,7 +41,7 @@ ScriptBox does not install itself. The initial launcher fetches only the UI/cata
 - **Diagnostics** — test KVM connectivity and site networking, or watch live Wake-on-LAN traffic on UDP ports 7 and 9.
 - **BIOS** — conservative HP, Dell, and Lenovo helpers, including a model-gated HP EliteDesk 800 G3/G5 Mini JetKVM/WOL workflow.
 
-Use **i** to inspect impact, elevation, execution-policy behavior, and the exact on-demand source. Use **RUN** for one task. Tick **SELECT** on several cards and choose **RUN SELECTED** to execute them sequentially. ScriptBox prevents conflicting update modes, BIOS vendors, and simultaneous restart/shutdown selections. Scripts that need administrator rights trigger Windows UAC automatically. Only catalog entries marked as requiring a policy bypass receive `-ExecutionPolicy Bypass`, and only for their child PowerShell process.
+Inside **Scripts**, use **i** to inspect impact, elevation, execution-policy behavior, and the exact on-demand source. Use **RUN** for one task. Tick **SELECT** on several cards and choose **RUN SELECTED** to execute them sequentially. ScriptBox prevents conflicting update modes, BIOS vendors, and simultaneous restart/shutdown selections. Scripts that need administrator rights trigger Windows UAC automatically. Only catalog entries marked as requiring a policy bypass receive `-ExecutionPolicy Bypass`, and only for their child PowerShell process.
 
 After a feedback-producing script finishes, ScriptBox translates its output into **Good**, **Review**, and **Problems** counts with a plain-language summary. Full terminal details remain visible in the same matching result window. A multi-script queue produces one combined result at the end.
 
@@ -72,6 +82,8 @@ Set `ShowInAllScripts` to `$false` for an action that should appear only inside 
 ## Design and safety notes
 
 - Windows PowerShell 5.1 and WPF are already included with supported desktop versions of Windows.
+- The shell uses no Electron, Node.js, package manager, background service, scheduled task, or installed application footprint.
+- Application cards cache one read-only scan of Windows uninstall records and never download or install software.
 - PowerShell 7 launches a short Windows PowerShell STA handoff because WPF requires an STA thread; the handoff itself does not use a policy bypass.
 - Script output is streamed from a temporary UTF-8 log and removed after completion or app shutdown.
 - Multi-selection runs sequentially, avoiding simultaneous registry, policy, installer, and firmware changes.

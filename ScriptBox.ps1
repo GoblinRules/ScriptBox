@@ -11,13 +11,20 @@ Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 
 $script:AppName = 'ScriptBox'
-$script:Version = '2.2.4'
+$script:Version = '3.0.0'
 $script:Repository = 'https://github.com/GoblinRules/ScriptBox'
 $script:SelfSource = 'https://raw.githubusercontent.com/GoblinRules/ScriptBox/main/ScriptBox.ps1'
 $script:IconSource = 'https://raw.githubusercontent.com/GoblinRules/ScriptBox/main/assets/icon.png'
 $script:RawScriptRoot = "https://raw.githubusercontent.com/GoblinRules/ScriptBox/v$($script:Version)/scripts"
 $script:TempRoot = $null
+$script:ActiveSection = 'Scripts'
 $script:ActiveCategory = 'All scripts'
+$script:IsDarkTheme = $true
+$script:SystemInfoLoaded = $false
+$script:SystemInfoSnapshot = $null
+$script:InstalledApplicationNames = $null
+$script:TerminalMode = 'Normal'
+$script:SectionButtons = @{}
 $script:RunState = $null
 $script:RunButtons = New-Object System.Collections.Generic.List[object]
 $script:SelectionControls = New-Object System.Collections.Generic.List[object]
@@ -210,29 +217,57 @@ $script:Catalog = @(
 )
 # ============================== END CATALOG ================================
 
+# Lightweight, non-installing application directory inspired by InvokeX.
+# These cards open the publisher's page only; ScriptBox never downloads or
+# installs an application from this section.
+$script:ApplicationLinks = @(
+    [pscustomobject]@{ Name = 'TRIP (Tray IP)'; Description = 'Lightweight system-tray IP monitor with notifications and an overlay.'; Tags = 'NETWORK  •  UTILITY'; Uri = 'https://github.com/GoblinRules/TRIP'; Detect = 'TRIP*'; Accent = '#22D3EE' }
+    [pscustomobject]@{ Name = 'ClearShot'; Description = 'Screenshot capture and annotation utility for Windows.'; Tags = 'UTILITY'; Uri = 'https://github.com/GoblinRules/ClearShot'; Detect = 'ClearShot*'; Accent = '#A855F7' }
+    [pscustomobject]@{ Name = 'SlickClick'; Description = 'Lightweight auto-clicker with pacing, targets, and tray support.'; Tags = 'UTILITY'; Uri = 'https://github.com/GoblinRules/SlickClick'; Detect = 'SlickClick*'; Accent = '#34D399' }
+    [pscustomobject]@{ Name = 'PyAutoClicker'; Description = 'Automated clicking utility for Windows.'; Tags = 'UTILITY'; Uri = 'https://github.com/GoblinRules/PyAutoClicker'; Detect = 'PyAutoClicker*'; Accent = '#F59E0B' }
+    [pscustomobject]@{ Name = 'IP Python Tray App'; Description = 'Legacy system-tray IP address display utility.'; Tags = 'NETWORK  •  LEGACY'; Uri = 'https://github.com/GoblinRules/ippy-tray-app'; Detect = 'IP Python Tray App*'; Accent = '#38BDF8' }
+    [pscustomobject]@{ Name = 'PowerEventProvider'; Description = 'Power-management event provider and logging service.'; Tags = 'POWER  •  SYSTEM'; Uri = 'https://github.com/GoblinRules/powereventprovider'; Detect = 'PowerEventProvider*'; Accent = '#F472B6' }
+    [pscustomobject]@{ Name = 'CTT WinUtil'; Description = 'Chris Titus Tech Windows utility collection.'; Tags = 'SYSTEM  •  UTILITY'; Uri = 'https://github.com/ChrisTitusTech/winutil'; Detect = ''; Accent = '#2DD4BF' }
+    [pscustomobject]@{ Name = 'MASS'; Description = 'Microsoft Activation Scripts source repository.'; Tags = 'SYSTEM'; Uri = 'https://github.com/massgravel/Microsoft-Activation-Scripts'; Detect = ''; Accent = '#C084FC' }
+    [pscustomobject]@{ Name = 'Tailscale'; Description = 'Secure mesh networking and VPN platform.'; Tags = 'NETWORK  •  SECURITY'; Uri = 'https://tailscale.com/'; Detect = 'Tailscale*'; Accent = '#60A5FA' }
+    [pscustomobject]@{ Name = 'MuMu Player'; Description = 'Android emulator for Windows.'; Tags = 'UTILITY'; Uri = 'https://www.mumuplayer.com/'; Detect = 'MuMu*'; Accent = '#FB7185' }
+    [pscustomobject]@{ Name = 'Ninite'; Description = 'Publisher page for the essential Windows application bundle.'; Tags = 'UTILITY  •  BROWSER'; Uri = 'https://ninite.com/'; Detect = ''; Accent = '#4ADE80' }
+)
+
 $script:IsAdministrator = Test-IsAdministrator
 $script:TempRoot = New-ScriptBoxTempRoot
 
 $windowXaml = @'
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="ScriptBox" Width="1160" Height="790" MinWidth="980" MinHeight="680"
-        WindowStartupLocation="CenterScreen" Background="#080B17" Foreground="#F8FAFC"
+        Title="ScriptBox" Width="1280" Height="850" MinWidth="1080" MinHeight="720"
+        WindowStartupLocation="CenterScreen" Background="{DynamicResource AppBackground}" Foreground="{DynamicResource PrimaryText}"
         FontFamily="Segoe UI" UseLayoutRounding="True">
     <Window.Resources>
+        <SolidColorBrush x:Key="AppBackground" Color="#080B17"/>
+        <SolidColorBrush x:Key="SidebarBackground" Color="#0C1022"/>
+        <SolidColorBrush x:Key="SurfaceBackground" Color="#11182D"/>
+        <SolidColorBrush x:Key="CardBackground" Color="#11172B"/>
+        <SolidColorBrush x:Key="ControlBackground" Color="#1A2340"/>
+        <SolidColorBrush x:Key="InputBackground" Color="#0B1123"/>
+        <SolidColorBrush x:Key="TerminalBackground" Color="#070A13"/>
+        <SolidColorBrush x:Key="ThemeBorder" Color="#263252"/>
+        <SolidColorBrush x:Key="PrimaryText" Color="#F8FAFC"/>
+        <SolidColorBrush x:Key="SecondaryText" Color="#A8B3CA"/>
+        <SolidColorBrush x:Key="MutedText" Color="#64748B"/>
         <Style TargetType="Button">
-            <Setter Property="Foreground" Value="#F8FAFC"/>
-            <Setter Property="Background" Value="#1A2340"/>
-            <Setter Property="BorderBrush" Value="#314164"/>
+            <Setter Property="Foreground" Value="{DynamicResource PrimaryText}"/>
+            <Setter Property="Background" Value="{DynamicResource ControlBackground}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource ThemeBorder}"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="Padding" Value="14,8"/>
             <Setter Property="Cursor" Value="Hand"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
         </Style>
         <Style TargetType="TextBox">
-            <Setter Property="Foreground" Value="#E2E8F0"/>
-            <Setter Property="Background" Value="#0B1123"/>
-            <Setter Property="BorderBrush" Value="#263252"/>
+            <Setter Property="Foreground" Value="{DynamicResource PrimaryText}"/>
+            <Setter Property="Background" Value="{DynamicResource InputBackground}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource ThemeBorder}"/>
             <Setter Property="CaretBrush" Value="#22D3EE"/>
             <Setter Property="BorderThickness" Value="1"/>
         </Style>
@@ -245,10 +280,10 @@ $windowXaml = @'
         <Grid.RowDefinitions>
             <RowDefinition Height="86"/>
             <RowDefinition Height="*"/>
-            <RowDefinition Height="222"/>
+            <RowDefinition x:Name="TerminalRow" Height="222"/>
         </Grid.RowDefinitions>
 
-        <Border Grid.Column="0" Grid.RowSpan="3" Background="#0C1022" BorderBrush="#202A48" BorderThickness="0,0,1,0">
+        <Border x:Name="SidebarShell" Grid.Column="0" Grid.RowSpan="3" Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource ThemeBorder}" BorderThickness="0,0,1,0">
             <Grid Margin="20,22">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
@@ -261,23 +296,29 @@ $windowXaml = @'
                         <Image x:Name="AppIcon" Width="42" Height="42" Stretch="Uniform"/>
                     </Border>
                     <StackPanel Margin="12,2,0,0">
-                        <TextBlock Text="SCRIPTBOX" FontSize="18" FontWeight="Bold" Foreground="#F8FAFC"/>
+                        <TextBlock Text="SCRIPTBOX" FontSize="18" FontWeight="Bold" Foreground="{DynamicResource PrimaryText}"/>
                         <TextBlock Text="RUN • WATCH • DONE" FontSize="9" FontWeight="SemiBold" Foreground="#22D3EE"/>
                     </StackPanel>
                 </StackPanel>
 
                 <Grid Grid.Row="1" Margin="0,30,0,18">
                     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
-                    <TextBlock Text="SECTIONS" FontSize="10" FontWeight="Bold" Foreground="#64748B" Margin="4,0,0,10"/>
+                    <TextBlock Text="SECTIONS" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource MutedText}" Margin="4,0,0,10"/>
                     <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                        <StackPanel x:Name="CategoryHost" Margin="0,0,6,0"/>
+                        <StackPanel x:Name="SectionHost" Margin="0,0,6,0"/>
                     </ScrollViewer>
                 </Grid>
 
-                <Border Grid.Row="3" Background="#11182D" BorderBrush="#263252" BorderThickness="1" CornerRadius="12" Padding="12">
+                <Border Grid.Row="3" Background="{DynamicResource SurfaceBackground}" BorderBrush="{DynamicResource ThemeBorder}" BorderThickness="1" CornerRadius="12" Padding="12">
                     <StackPanel>
                         <TextBlock x:Name="PrivilegeLabel" FontSize="11" FontWeight="SemiBold" Foreground="#A7F3D0"/>
-                        <TextBlock Text="Elevation is requested only when a script needs it." TextWrapping="Wrap" FontSize="10" Foreground="#94A3B8" Margin="0,5,0,0"/>
+                        <TextBlock Text="Elevation is requested only when an action needs it." TextWrapping="Wrap" FontSize="10" Foreground="{DynamicResource SecondaryText}" Margin="0,5,0,8"/>
+                        <Button x:Name="ElevateButton" Content="RESTART AS ADMIN" FontSize="9" Padding="8,5" Margin="0,0,0,8"/>
+                        <WrapPanel>
+                            <Button x:Name="ControlPanelButton" Content="CONTROL PANEL" FontSize="8" Padding="6,4" Margin="0,0,5,5"/>
+                            <Button x:Name="SettingsButton" Content="SETTINGS" FontSize="8" Padding="6,4" Margin="0,0,5,5"/>
+                            <Button x:Name="OpenTerminalButton" Content="TERMINAL" FontSize="8" Padding="6,4" Margin="0,0,5,5"/>
+                        </WrapPanel>
                     </StackPanel>
                 </Border>
             </Grid>
@@ -290,26 +331,32 @@ $windowXaml = @'
                 <ColumnDefinition Width="300"/>
             </Grid.ColumnDefinitions>
             <StackPanel>
-                <TextBlock Text="Choose a script" FontSize="25" FontWeight="Bold" Foreground="#F8FAFC"/>
-                <TextBlock x:Name="ResultsLabel" Text="Safe, visible execution with live output." FontSize="12" Foreground="#94A3B8" Margin="0,5,0,0"/>
+                <TextBlock x:Name="PageTitle" Text="Scripts" FontSize="25" FontWeight="Bold" Foreground="{DynamicResource PrimaryText}"/>
+                <TextBlock x:Name="ResultsLabel" Text="Safe, visible execution with live output." FontSize="12" Foreground="{DynamicResource SecondaryText}" Margin="0,5,0,0"/>
             </StackPanel>
-            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Bottom" Margin="12,0,14,0">
+            <StackPanel x:Name="BatchPanel" Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Bottom" Margin="12,0,14,0">
                 <Button x:Name="ClearSelectionButton" Content="CLEAR" Height="42" Padding="12,7" Margin="0,0,8,0"
                         Background="#151D35" BorderBrush="#334263" Foreground="#CBD5E1"/>
                 <Button x:Name="RunSelectedButton" Content="RUN SELECTED (0)" Height="42" Padding="14,7"
                         Background="#7C3AED" BorderBrush="#A855F7" Foreground="White"/>
+                <Button x:Name="ThemeToggleButton" Content="LIGHT" Height="42" Padding="12,7" Margin="8,0,0,0"/>
             </StackPanel>
-            <Grid Grid.Column="2">
-                <TextBlock Text="SEARCH" FontSize="9" FontWeight="Bold" Foreground="#64748B" Margin="12,-3,0,0" Panel.ZIndex="1"/>
+            <Grid x:Name="SearchPanel" Grid.Column="2">
+                <TextBlock Text="SEARCH" FontSize="9" FontWeight="Bold" Foreground="{DynamicResource MutedText}" Margin="12,-3,0,0" Panel.ZIndex="1"/>
                 <TextBox x:Name="SearchBox" Height="42" Padding="13,12,13,8" FontSize="13" VerticalContentAlignment="Center"/>
             </Grid>
         </Grid>
 
         <ScrollViewer Grid.Column="1" Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Margin="26,8,12,10">
-            <WrapPanel x:Name="CardsHost"/>
+            <StackPanel>
+                <Border x:Name="ScriptTabsPanel" Background="{DynamicResource SurfaceBackground}" BorderBrush="{DynamicResource ThemeBorder}" BorderThickness="1" CornerRadius="12" Padding="10" Margin="0,0,14,14">
+                    <WrapPanel x:Name="CategoryHost"/>
+                </Border>
+                <WrapPanel x:Name="CardsHost"/>
+            </StackPanel>
         </ScrollViewer>
 
-        <Border Grid.Column="1" Grid.Row="2" Margin="26,4,26,22" Background="#070A13" BorderBrush="#263252" BorderThickness="1" CornerRadius="14">
+        <Border x:Name="TerminalShell" Grid.Column="1" Grid.Row="2" Margin="26,4,26,22" Background="{DynamicResource TerminalBackground}" BorderBrush="{DynamicResource ThemeBorder}" BorderThickness="1" CornerRadius="14">
             <Grid>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="43"/>
@@ -322,12 +369,16 @@ $windowXaml = @'
                             <TextBlock Text="LIVE TERMINAL" FontSize="10" FontWeight="Bold" Foreground="#CBD5E1" VerticalAlignment="Center"/>
                             <TextBlock x:Name="TerminalStatus" Text="  READY" FontSize="10" FontWeight="Bold" Foreground="#34D399" VerticalAlignment="Center"/>
                         </StackPanel>
-                        <Button x:Name="ClearTerminalButton" Content="CLEAR" HorizontalAlignment="Right" VerticalAlignment="Center" FontSize="9" Padding="11,5"/>
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                            <Button x:Name="ExpandTerminalButton" Content="EXPAND" FontSize="9" Padding="9,5" Margin="0,0,6,0"/>
+                            <Button x:Name="CollapseTerminalButton" Content="COLLAPSE" FontSize="9" Padding="9,5" Margin="0,0,6,0"/>
+                            <Button x:Name="ClearTerminalButton" Content="CLEAR" FontSize="9" Padding="11,5"/>
+                        </StackPanel>
                     </Grid>
                 </Border>
                 <TextBox x:Name="TerminalOutput" Grid.Row="1" IsReadOnly="True" AcceptsReturn="True" TextWrapping="NoWrap"
                          VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" BorderThickness="0"
-                         FontFamily="Cascadia Mono,Consolas" FontSize="11" Padding="14,10" Background="#070A13" Foreground="#A7F3D0"/>
+                         FontFamily="Cascadia Mono,Consolas" FontSize="11" Padding="14,10" Background="{DynamicResource TerminalBackground}" Foreground="#A7F3D0"/>
             </Grid>
         </Border>
     </Grid>
@@ -340,13 +391,25 @@ $script:Window = [Windows.Markup.XamlReader]::Load($reader)
 
 $script:CardsHost = $script:Window.FindName('CardsHost')
 $script:CategoryHost = $script:Window.FindName('CategoryHost')
+$script:SectionHost = $script:Window.FindName('SectionHost')
+$script:ScriptTabsPanel = $script:Window.FindName('ScriptTabsPanel')
 $script:SearchBox = $script:Window.FindName('SearchBox')
+$script:SearchPanel = $script:Window.FindName('SearchPanel')
+$script:PageTitle = $script:Window.FindName('PageTitle')
 $script:ResultsLabel = $script:Window.FindName('ResultsLabel')
 $script:TerminalOutput = $script:Window.FindName('TerminalOutput')
 $script:TerminalStatus = $script:Window.FindName('TerminalStatus')
+$script:TerminalRow = $script:Window.FindName('TerminalRow')
 $script:ClearTerminalButton = $script:Window.FindName('ClearTerminalButton')
+$script:ExpandTerminalButton = $script:Window.FindName('ExpandTerminalButton')
+$script:CollapseTerminalButton = $script:Window.FindName('CollapseTerminalButton')
 $script:RunSelectedButton = $script:Window.FindName('RunSelectedButton')
 $script:ClearSelectionButton = $script:Window.FindName('ClearSelectionButton')
+$script:ThemeToggleButton = $script:Window.FindName('ThemeToggleButton')
+$script:ElevateButton = $script:Window.FindName('ElevateButton')
+$script:ControlPanelButton = $script:Window.FindName('ControlPanelButton')
+$script:SettingsButton = $script:Window.FindName('SettingsButton')
+$script:OpenTerminalButton = $script:Window.FindName('OpenTerminalButton')
 $script:PrivilegeLabel = $script:Window.FindName('PrivilegeLabel')
 $script:AppIcon = $script:Window.FindName('AppIcon')
 
@@ -1079,6 +1142,554 @@ exit $exitCode
     }
 }
 
+function Set-ThemeBrushColor {
+    param(
+        [Parameter(Mandatory)][string]$Key,
+        [Parameter(Mandatory)][string]$Color
+    )
+
+    $convertedColor = [Windows.Media.ColorConverter]::ConvertFromString($Color)
+    $replacementBrush = New-Object Windows.Media.SolidColorBrush
+    $replacementBrush.Color = $convertedColor
+    $script:Window.Resources.Remove($Key)
+    $script:Window.Resources.Add($Key, $replacementBrush)
+}
+
+function Set-ScriptBoxTheme {
+    param([Parameter(Mandatory)][ValidateSet('Dark', 'Light')][string]$Theme)
+
+    $script:IsDarkTheme = $Theme -eq 'Dark'
+    $colors = if ($script:IsDarkTheme) {
+        @{
+            AppBackground     = '#080B17'
+            SidebarBackground = '#0C1022'
+            SurfaceBackground = '#11182D'
+            CardBackground    = '#11172B'
+            ControlBackground = '#1A2340'
+            InputBackground   = '#0B1123'
+            TerminalBackground = '#070A13'
+            ThemeBorder       = '#263252'
+            PrimaryText       = '#F8FAFC'
+            SecondaryText     = '#A8B3CA'
+            MutedText         = '#64748B'
+        }
+    }
+    else {
+        @{
+            AppBackground     = '#F1F5F9'
+            SidebarBackground = '#FFFFFF'
+            SurfaceBackground = '#E2E8F0'
+            CardBackground    = '#FFFFFF'
+            ControlBackground = '#E2E8F0'
+            InputBackground   = '#FFFFFF'
+            TerminalBackground = '#0F172A'
+            ThemeBorder       = '#CBD5E1'
+            PrimaryText       = '#0F172A'
+            SecondaryText     = '#475569'
+            MutedText         = '#64748B'
+        }
+    }
+
+    foreach ($entry in $colors.GetEnumerator()) {
+        Set-ThemeBrushColor -Key $entry.Key -Color $entry.Value
+    }
+    $script:ThemeToggleButton.Content = if ($script:IsDarkTheme) { 'LIGHT' } else { 'DARK' }
+    $script:TerminalOutput.Foreground = if ($script:IsDarkTheme) { '#A7F3D0' } else { '#86EFAC' }
+}
+
+function Open-ReferenceUri {
+    param(
+        [Parameter(Mandatory)][string]$Name,
+        [Parameter(Mandatory)][string]$Uri
+    )
+
+    try {
+        if ($Uri -notmatch '^https://') { throw 'Only HTTPS publisher links are allowed.' }
+        Start-Process -FilePath $Uri -ErrorAction Stop
+        Add-TerminalLine "Opened publisher page for $Name. ScriptBox did not download or install anything."
+    }
+    catch {
+        Show-ScriptBoxDialog -Title 'Could not open publisher page' -Message $_.Exception.Message -Buttons OK -Kind Info | Out-Null
+    }
+}
+
+function Get-InstalledApplicationNames {
+    $uninstallRoots = @(
+        'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*',
+        'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*',
+        'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*'
+    )
+    return @($uninstallRoots | ForEach-Object {
+        Get-ItemProperty -Path $_ -ErrorAction SilentlyContinue |
+            Where-Object {
+                $_.PSObject.Properties.Name -contains 'DisplayName' -and
+                -not [string]::IsNullOrWhiteSpace([string]$_.DisplayName)
+            } |
+            ForEach-Object { [string]$_.DisplayName }
+    } | Sort-Object -Unique)
+}
+
+function Get-ApplicationStatus {
+    param([Parameter(Mandatory)]$Application)
+    if ([string]::IsNullOrWhiteSpace($Application.Detect)) { return 'REFERENCE' }
+    if (@($script:InstalledApplicationNames | Where-Object { $_ -like $Application.Detect }).Count -gt 0) {
+        return 'INSTALLED'
+    }
+    return 'NOT DETECTED'
+}
+
+function New-ApplicationCard {
+    param([Parameter(Mandatory)]$Application)
+
+    $border = New-Object Windows.Controls.Border
+    $border.Width = 342
+    $border.Height = 184
+    $border.Margin = '0,0,14,14'
+    $border.Padding = '18'
+    $border.CornerRadius = '15'
+    $border.Background = $script:Window.Resources['CardBackground']
+    $border.BorderBrush = $Application.Accent
+    $border.BorderThickness = '1,1,1,2'
+
+    $grid = New-Object Windows.Controls.Grid
+    $grid.RowDefinitions.Add((New-Object Windows.Controls.RowDefinition -Property @{ Height = 'Auto' }))
+    $grid.RowDefinitions.Add((New-Object Windows.Controls.RowDefinition -Property @{ Height = 'Auto' }))
+    $grid.RowDefinitions.Add((New-Object Windows.Controls.RowDefinition -Property @{ Height = '*' }))
+    $grid.RowDefinitions.Add((New-Object Windows.Controls.RowDefinition -Property @{ Height = 'Auto' }))
+
+    $tags = New-Object Windows.Controls.TextBlock
+    $applicationStatus = Get-ApplicationStatus -Application $Application
+    $tags.Text = "$($Application.Tags)  •  $applicationStatus  •  LINK ONLY"
+    $tags.FontSize = 9
+    $tags.FontWeight = 'Bold'
+    $tags.Foreground = $Application.Accent
+
+    $name = New-Object Windows.Controls.TextBlock
+    $name.Text = $Application.Name
+    $name.FontSize = 18
+    $name.FontWeight = 'Bold'
+    $name.Foreground = $script:Window.Resources['PrimaryText']
+    $name.Margin = '0,7,0,0'
+    [Windows.Controls.Grid]::SetRow($name, 1)
+
+    $description = New-Object Windows.Controls.TextBlock
+    $description.Text = $Application.Description
+    $description.FontSize = 11
+    $description.TextWrapping = 'Wrap'
+    $description.Foreground = $script:Window.Resources['SecondaryText']
+    $description.Margin = '0,8,0,8'
+    [Windows.Controls.Grid]::SetRow($description, 2)
+
+    $openButton = New-Object Windows.Controls.Button
+    $openButton.Content = 'OPEN PUBLISHER PAGE'
+    $openButton.HorizontalAlignment = 'Right'
+    $openButton.Background = $Application.Accent
+    $openButton.BorderBrush = $Application.Accent
+    $openButton.Foreground = '#050816'
+    $openButton.Padding = '14,5'
+    $openReferenceUri = ${function:Open-ReferenceUri}
+    $openButton.Add_Click({ & $openReferenceUri -Name $Application.Name -Uri $Application.Uri }.GetNewClosure())
+    [Windows.Controls.Grid]::SetRow($openButton, 3)
+
+    $grid.Children.Add($tags) | Out-Null
+    $grid.Children.Add($name) | Out-Null
+    $grid.Children.Add($description) | Out-Null
+    $grid.Children.Add($openButton) | Out-Null
+    $border.Child = $grid
+    return $border
+}
+
+function Render-Applications {
+    $script:CardsHost.Children.Clear()
+    $script:RunButtons.Clear()
+    $script:SelectionControls.Clear()
+    if ($null -eq $script:InstalledApplicationNames) {
+        $script:InstalledApplicationNames = @(Get-InstalledApplicationNames)
+    }
+    $query = $script:SearchBox.Text.Trim()
+    $applications = @($script:ApplicationLinks | Where-Object {
+        [string]::IsNullOrWhiteSpace($query) -or
+        $_.Name.IndexOf($query, [StringComparison]::OrdinalIgnoreCase) -ge 0 -or
+        $_.Description.IndexOf($query, [StringComparison]::OrdinalIgnoreCase) -ge 0 -or
+        $_.Tags.IndexOf($query, [StringComparison]::OrdinalIgnoreCase) -ge 0
+    })
+    foreach ($application in $applications) {
+        $script:CardsHost.Children.Add((New-ApplicationCard -Application $application)) | Out-Null
+    }
+    $script:ResultsLabel.Text = "$($applications.Count) publisher link(s), with read-only installed status where Windows reports it. This section never downloads or installs software."
+}
+
+function New-FeatureCard {
+    param(
+        [Parameter(Mandatory)][string]$Title,
+        [Parameter(Mandatory)][string]$Description,
+        [string]$Accent = '#22D3EE',
+        [double]$Width = 500,
+        [double]$MinHeight = 230
+    )
+
+    $border = New-Object Windows.Controls.Border
+    $border.Width = $Width
+    $border.MinHeight = $MinHeight
+    $border.Margin = '0,0,14,14'
+    $border.Padding = '18'
+    $border.CornerRadius = '15'
+    $border.Background = $script:Window.Resources['CardBackground']
+    $border.BorderBrush = $Accent
+    $border.BorderThickness = '1,1,1,2'
+
+    $stack = New-Object Windows.Controls.StackPanel
+    $heading = New-Object Windows.Controls.TextBlock
+    $heading.Text = $Title
+    $heading.FontSize = 19
+    $heading.FontWeight = 'Bold'
+    $heading.Foreground = $script:Window.Resources['PrimaryText']
+    $stack.Children.Add($heading) | Out-Null
+
+    $subheading = New-Object Windows.Controls.TextBlock
+    $subheading.Text = $Description
+    $subheading.FontSize = 11
+    $subheading.TextWrapping = 'Wrap'
+    $subheading.Foreground = $script:Window.Resources['SecondaryText']
+    $subheading.Margin = '0,6,0,14'
+    $stack.Children.Add($subheading) | Out-Null
+
+    $body = New-Object Windows.Controls.StackPanel
+    $stack.Children.Add($body) | Out-Null
+    $border.Child = $stack
+    return [pscustomobject]@{ Border = $border; Body = $body; Accent = $Accent }
+}
+
+function Add-FeatureLabel {
+    param([Parameter(Mandatory)]$HostPanel, [Parameter(Mandatory)][string]$Text)
+    $label = New-Object Windows.Controls.TextBlock
+    $label.Text = $Text
+    $label.FontSize = 10
+    $label.FontWeight = 'SemiBold'
+    $label.Foreground = $script:Window.Resources['SecondaryText']
+    $label.Margin = '0,4,0,4'
+    $HostPanel.Children.Add($label) | Out-Null
+}
+
+function New-FeatureInput {
+    param([string]$Text = '')
+    $input = New-Object Windows.Controls.TextBox
+    $input.Text = $Text
+    $input.Height = 36
+    $input.Padding = '9,8'
+    $input.FontSize = 12
+    $input.Margin = '0,0,0,9'
+    return $input
+}
+
+function New-FeatureButton {
+    param(
+        [Parameter(Mandatory)][string]$Text,
+        [string]$Accent = '#22D3EE'
+    )
+    $button = New-Object Windows.Controls.Button
+    $button.Content = $Text
+    $button.Background = $Accent
+    $button.BorderBrush = $Accent
+    $button.Foreground = '#050816'
+    $button.Margin = '0,4,7,0'
+    $button.Padding = '12,7'
+    return $button
+}
+
+function Start-UtilityCommand {
+    param(
+        [Parameter(Mandatory)][string]$Name,
+        [Parameter(Mandatory)][string]$Description,
+        [Parameter(Mandatory)][string]$ScriptText,
+        [bool]$RequiresAdmin = $false
+    )
+
+    $utilityItem = New-CatalogItem -Id ("utility-{0}" -f [Guid]::NewGuid().ToString('N')) `
+        -Name $Name -Category 'Built-in' -Description $Description `
+        -InlineScript ([scriptblock]::Create($ScriptText)) -RequiresAdmin $RequiresAdmin `
+        -RequiresConfirmation $false -CanQueue $false -ResultMode 'None' -Accent '#22D3EE'
+    Start-CatalogItem -Item $utilityItem
+}
+
+function Get-SafeNetworkTarget {
+    param([Parameter(Mandatory)][string]$Target)
+    $trimmed = $Target.Trim()
+    if ($trimmed -notmatch '^[A-Za-z0-9](?:[A-Za-z0-9.:-]{0,252}[A-Za-z0-9])?$') {
+        throw 'Enter a hostname or IP address using only letters, numbers, dots, colons, and hyphens.'
+    }
+    return $trimmed
+}
+
+function Render-NetworkTools {
+    $script:CardsHost.Children.Clear()
+    $script:RunButtons.Clear()
+    $script:SelectionControls.Clear()
+
+    $pingCard = New-FeatureCard -Title 'Ping' -Description 'Send ICMP echo requests with a configurable count.' -Accent '#22D3EE'
+    Add-FeatureLabel -HostPanel $pingCard.Body -Text 'Address'
+    $pingTarget = New-FeatureInput -Text '8.8.8.8'
+    $pingCard.Body.Children.Add($pingTarget) | Out-Null
+    Add-FeatureLabel -HostPanel $pingCard.Body -Text 'Count (1–50)'
+    $pingCount = New-FeatureInput -Text '4'
+    $pingCard.Body.Children.Add($pingCount) | Out-Null
+    $pingButton = New-FeatureButton -Text 'RUN PING' -Accent '#22D3EE'
+    $getSafeNetworkTarget = ${function:Get-SafeNetworkTarget}
+    $startUtilityCommand = ${function:Start-UtilityCommand}
+    $showScriptBoxDialog = ${function:Show-ScriptBoxDialog}
+    $addTerminalLine = ${function:Add-TerminalLine}
+    $pingButton.Add_Click({
+        try {
+            $target = & $getSafeNetworkTarget -Target $pingTarget.Text
+            $count = 0
+            if (-not [int]::TryParse($pingCount.Text, [ref]$count) -or $count -lt 1 -or $count -gt 50) {
+                throw 'Ping count must be between 1 and 50.'
+            }
+            & $startUtilityCommand -Name "Ping $target" -Description 'Built-in read-only ping.' `
+                -ScriptText "& ping.exe -n $count '$target'"
+        }
+        catch { & $showScriptBoxDialog -Title 'Ping input' -Message $_.Exception.Message -Buttons OK -Kind Info | Out-Null }
+    }.GetNewClosure())
+    $pingCard.Body.Children.Add($pingButton) | Out-Null
+    $script:CardsHost.Children.Add($pingCard.Border) | Out-Null
+
+    $traceCard = New-FeatureCard -Title 'Traceroute' -Description 'Trace the network path to a hostname or IP address.' -Accent '#A855F7'
+    Add-FeatureLabel -HostPanel $traceCard.Body -Text 'Destination'
+    $traceTarget = New-FeatureInput -Text '1.1.1.1'
+    $traceCard.Body.Children.Add($traceTarget) | Out-Null
+    $traceButton = New-FeatureButton -Text 'RUN TRACEROUTE' -Accent '#A855F7'
+    $traceButton.Add_Click({
+        try {
+            $target = & $getSafeNetworkTarget -Target $traceTarget.Text
+            & $startUtilityCommand -Name "Traceroute $target" -Description 'Built-in read-only route trace.' `
+                -ScriptText "& tracert.exe -d '$target'"
+        }
+        catch { & $showScriptBoxDialog -Title 'Traceroute input' -Message $_.Exception.Message -Buttons OK -Kind Info | Out-Null }
+    }.GetNewClosure())
+    $traceCard.Body.Children.Add($traceButton) | Out-Null
+    $script:CardsHost.Children.Add($traceCard.Border) | Out-Null
+
+    $latencyCard = New-FeatureCard -Title 'Latency Test' -Description 'Measure response-time range, average, and packet loss.' -Accent '#60A5FA'
+    Add-FeatureLabel -HostPanel $latencyCard.Body -Text 'Address'
+    $latencyTarget = New-FeatureInput -Text '1.1.1.1'
+    $latencyCard.Body.Children.Add($latencyTarget) | Out-Null
+    Add-FeatureLabel -HostPanel $latencyCard.Body -Text 'Samples (2–50)'
+    $latencyCount = New-FeatureInput -Text '10'
+    $latencyCard.Body.Children.Add($latencyCount) | Out-Null
+    $latencyButton = New-FeatureButton -Text 'RUN LATENCY TEST' -Accent '#60A5FA'
+    $latencyButton.Add_Click({
+        try {
+            $target = & $getSafeNetworkTarget -Target $latencyTarget.Text
+            $count = 0
+            if (-not [int]::TryParse($latencyCount.Text, [ref]$count) -or $count -lt 2 -or $count -gt 50) {
+                throw 'Sample count must be between 2 and 50.'
+            }
+            $latencyScript = @"
+`$replies = @(Test-Connection -ComputerName '$target' -Count $count -ErrorAction SilentlyContinue)
+`$times = @(`$replies | Select-Object -ExpandProperty ResponseTime)
+if (`$times.Count -eq 0) { Write-Error 'No ping replies were received.'; exit 1 }
+`$stats = `$times | Measure-Object -Minimum -Maximum -Average
+`$loss = [Math]::Round((1 - (`$times.Count / $count)) * 100, 1)
+Write-Host 'Latency test: $target'
+Write-Host ('Replies: {0}/{1}  Loss: {2}%' -f `$times.Count, $count, `$loss)
+Write-Host ('Minimum: {0} ms  Average: {1:N1} ms  Maximum: {2} ms' -f `$stats.Minimum, `$stats.Average, `$stats.Maximum)
+"@
+            & $startUtilityCommand -Name "Latency $target" -Description 'Built-in read-only latency test.' -ScriptText $latencyScript
+        }
+        catch { & $showScriptBoxDialog -Title 'Latency input' -Message $_.Exception.Message -Buttons OK -Kind Info | Out-Null }
+    }.GetNewClosure())
+    $latencyCard.Body.Children.Add($latencyButton) | Out-Null
+    $script:CardsHost.Children.Add($latencyCard.Border) | Out-Null
+
+    $quickCard = New-FeatureCard -Title 'Quick Network Actions' -Description 'Common Windows networking commands with output streamed below.' -Accent '#34D399'
+    $quickButtons = New-Object Windows.Controls.WrapPanel
+    foreach ($action in @(
+        [pscustomobject]@{ Text = 'FLUSH DNS'; Name = 'Flush DNS'; Admin = $true; Script = '& ipconfig.exe /flushdns' },
+        [pscustomobject]@{ Text = 'IPCONFIG'; Name = 'IPConfig'; Admin = $false; Script = '& ipconfig.exe' },
+        [pscustomobject]@{ Text = 'IPCONFIG /ALL'; Name = 'IPConfig all'; Admin = $false; Script = '& ipconfig.exe /all' },
+        [pscustomobject]@{ Text = 'NETWORK INFO'; Name = 'Network info'; Admin = $false; Script = 'Get-NetAdapter | Sort-Object Status, Name | Format-Table Name, Status, LinkSpeed, MacAddress, InterfaceDescription -AutoSize' }
+    )) {
+        $actionButton = New-FeatureButton -Text $action.Text -Accent '#34D399'
+        $actionButton.Add_Click({
+            & $startUtilityCommand -Name $action.Name -Description 'Built-in network action.' `
+                -ScriptText $action.Script -RequiresAdmin $action.Admin
+        }.GetNewClosure())
+        $quickButtons.Children.Add($actionButton) | Out-Null
+    }
+    $quickCard.Body.Children.Add($quickButtons) | Out-Null
+    $script:CardsHost.Children.Add($quickCard.Border) | Out-Null
+
+    $shortcutCard = New-FeatureCard -Title 'Windows Shortcuts' -Description 'Open native Windows administration surfaces without installing anything.' -Accent '#F59E0B'
+    $shortcutButtons = New-Object Windows.Controls.WrapPanel
+    foreach ($shortcut in @(
+        [pscustomobject]@{ Text = 'CONTROL PANEL'; Target = 'control.exe' },
+        [pscustomobject]@{ Text = 'SETTINGS'; Target = 'ms-settings:' },
+        [pscustomobject]@{ Text = 'TASK MANAGER'; Target = 'taskmgr.exe' },
+        [pscustomobject]@{ Text = 'TERMINAL'; Target = 'wt.exe' }
+    )) {
+        $shortcutButton = New-FeatureButton -Text $shortcut.Text -Accent '#F59E0B'
+        $shortcutButton.Add_Click({
+            try { Start-Process -FilePath $shortcut.Target -ErrorAction Stop }
+            catch { & $addTerminalLine "Could not open $($shortcut.Text): $($_.Exception.Message)" }
+        }.GetNewClosure())
+        $shortcutButtons.Children.Add($shortcutButton) | Out-Null
+    }
+    $shortcutCard.Body.Children.Add($shortcutButtons) | Out-Null
+    $script:CardsHost.Children.Add($shortcutCard.Border) | Out-Null
+    $script:ResultsLabel.Text = 'Built-in ping, traceroute, network commands, and Windows shortcuts.'
+}
+
+function Render-Diagnostics {
+    $script:CardsHost.Children.Clear()
+    $script:RunButtons.Clear()
+    $script:SelectionControls.Clear()
+    $diagnosticCard = New-FeatureCard -Title 'Network Diagnostics' `
+        -Description 'Read-only gateway, internet, DNS, TCP, and HTTPS checks. Detailed KVM diagnostics remain available in Scripts.' `
+        -Accent '#38BDF8' -Width 820 -MinHeight 300
+    $checklist = New-Object Windows.Controls.TextBlock
+    $checklist.Text = "• Active adapters and default gateway`n• Gateway and public ICMP reachability`n• DNS resolution`n• TCP 443 connectivity`n• HTTPS connectivity"
+    $checklist.FontSize = 13
+    $checklist.LineHeight = 24
+    $checklist.Foreground = $script:Window.Resources['SecondaryText']
+    $checklist.Margin = '0,0,0,14'
+    $diagnosticCard.Body.Children.Add($checklist) | Out-Null
+    $runButton = New-FeatureButton -Text 'RUN NETWORK DIAGNOSTICS' -Accent '#38BDF8'
+    $startUtilityCommand = ${function:Start-UtilityCommand}
+    $runButton.Add_Click({
+        $diagnosticScript = @'
+Write-Host '=== ACTIVE NETWORK ADAPTERS ==='
+Get-NetAdapter | Where-Object Status -eq 'Up' | Format-Table Name, LinkSpeed, MacAddress, InterfaceDescription -AutoSize
+Write-Host ''
+$route = Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue | Sort-Object RouteMetric | Select-Object -First 1
+$gateway = if ($route) { $route.NextHop } else { $null }
+Write-Host "Default gateway: $gateway"
+foreach ($target in @($gateway, '1.1.1.1', '8.8.8.8') | Where-Object { $_ }) {
+    $ok = Test-Connection -ComputerName $target -Count 2 -Quiet -ErrorAction SilentlyContinue
+    Write-Host ("Ping {0}: {1}" -f $target, $(if ($ok) { 'PASS' } else { 'FAIL' }))
+}
+try {
+    $dns = Resolve-DnsName -Name 'www.microsoft.com' -Type A -ErrorAction Stop | Select-Object -First 1
+    Write-Host "DNS www.microsoft.com: PASS ($($dns.IPAddress))"
+}
+catch { Write-Host "DNS www.microsoft.com: FAIL ($($_.Exception.Message))" }
+$tcp = Test-NetConnection -ComputerName 'www.microsoft.com' -Port 443 -WarningAction SilentlyContinue
+Write-Host "TCP www.microsoft.com:443: $(if ($tcp.TcpTestSucceeded) { 'PASS' } else { 'FAIL' })"
+try {
+    $response = Invoke-WebRequest -UseBasicParsing -Uri 'https://www.microsoft.com/' -Method Head -TimeoutSec 12
+    Write-Host "HTTPS microsoft.com: PASS ($([int]$response.StatusCode))"
+}
+catch { Write-Host "HTTPS microsoft.com: FAIL ($($_.Exception.Message))" }
+'@
+        & $startUtilityCommand -Name 'Network diagnostics' -Description 'Built-in read-only network diagnostics.' -ScriptText $diagnosticScript
+    }.GetNewClosure())
+    $diagnosticCard.Body.Children.Add($runButton) | Out-Null
+    $script:CardsHost.Children.Add($diagnosticCard.Border) | Out-Null
+    $script:ResultsLabel.Text = 'One-click read-only network health checks with live terminal output.'
+}
+
+function Get-SystemInfoSnapshot {
+    $os = Get-CimInstance -ClassName Win32_OperatingSystem
+    $computer = Get-CimInstance -ClassName Win32_ComputerSystem
+    $cpu = Get-CimInstance -ClassName Win32_Processor | Select-Object -First 1
+    $bios = Get-CimInstance -ClassName Win32_BIOS
+    $gpu = @(Get-CimInstance -ClassName Win32_VideoController | Select-Object -ExpandProperty Name)
+    $drives = @(Get-CimInstance -ClassName Win32_LogicalDisk -Filter 'DriveType=3' | Sort-Object DeviceID)
+    $adapters = @(Get-NetAdapter -ErrorAction SilentlyContinue | Where-Object Status -eq 'Up' | Sort-Object Name)
+    $memoryGb = [Math]::Round($computer.TotalPhysicalMemory / 1GB, 1)
+    $uptime = (Get-Date) - $os.LastBootUpTime
+
+    $driveText = @($drives | ForEach-Object {
+        $size = [Math]::Round($_.Size / 1GB, 1)
+        $free = [Math]::Round($_.FreeSpace / 1GB, 1)
+        "$($_.DeviceID)  $free GB free of $size GB"
+    }) -join [Environment]::NewLine
+    $networkText = @($adapters | ForEach-Object {
+        $address = @(Get-NetIPAddress -InterfaceIndex $_.ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue | Select-Object -ExpandProperty IPAddress) -join ', '
+        "$($_.Name)  •  $($_.LinkSpeed)`n$address`n$($_.MacAddress)"
+    }) -join ([Environment]::NewLine + [Environment]::NewLine)
+
+    return [ordered]@{
+        'Operating System' = "$($os.Caption)`nVersion $($os.Version)  •  Build $($os.BuildNumber)`nUptime: $($uptime.Days)d $($uptime.Hours)h $($uptime.Minutes)m"
+        'Hardware' = "$($computer.Manufacturer) $($computer.Model)`nCPU: $($cpu.Name)`nRAM: $memoryGb GB`nGPU: $($gpu -join ', ')"
+        'Firmware' = "BIOS: $($bios.SMBIOSBIOSVersion)`nSerial: $($bios.SerialNumber)`nComputer: $env:COMPUTERNAME`nUser: $env:USERDOMAIN\$env:USERNAME"
+        'Storage' = $(if ($driveText) { $driveText } else { 'No local fixed disks reported.' })
+        'Network' = $(if ($networkText) { $networkText } else { 'No active network adapters reported.' })
+    }
+}
+
+function New-SystemInfoCard {
+    param([Parameter(Mandatory)][string]$Title, [Parameter(Mandatory)][string]$Value)
+    $card = New-FeatureCard -Title $Title -Description '' -Accent '#60A5FA' -Width 500 -MinHeight 180
+    $text = New-Object Windows.Controls.TextBlock
+    $text.Text = $Value
+    $text.FontFamily = 'Segoe UI'
+    $text.FontSize = 12
+    $text.LineHeight = 20
+    $text.TextWrapping = 'Wrap'
+    $text.Foreground = $script:Window.Resources['SecondaryText']
+    $card.Body.Children.Add($text) | Out-Null
+    return $card.Border
+}
+
+function Render-SystemInfo {
+    $script:CardsHost.Children.Clear()
+    $script:RunButtons.Clear()
+    $script:SelectionControls.Clear()
+    try {
+        if (-not $script:SystemInfoLoaded -or $null -eq $script:SystemInfoSnapshot) {
+            $script:ResultsLabel.Text = 'Gathering system information...'
+            $script:SystemInfoSnapshot = Get-SystemInfoSnapshot
+            $script:SystemInfoLoaded = $true
+        }
+        foreach ($entry in $script:SystemInfoSnapshot.GetEnumerator()) {
+            $script:CardsHost.Children.Add((New-SystemInfoCard -Title $entry.Key -Value ([string]$entry.Value))) | Out-Null
+        }
+        $refresh = New-FeatureCard -Title 'Refresh' -Description 'Reload the hardware, storage, and network snapshot.' -Accent '#34D399' -Width 500 -MinHeight 140
+        $refreshButton = New-FeatureButton -Text 'REFRESH SYSTEM INFO' -Accent '#34D399'
+        $refreshButton.Add_Click({
+            $script:SystemInfoLoaded = $false
+            $script:SystemInfoSnapshot = $null
+            Render-SystemInfo
+        })
+        $refresh.Body.Children.Add($refreshButton) | Out-Null
+        $script:CardsHost.Children.Add($refresh.Border) | Out-Null
+        $script:ResultsLabel.Text = 'Read-only operating system, hardware, storage, and network details.'
+    }
+    catch {
+        $script:ResultsLabel.Text = "System information could not be loaded: $($_.Exception.Message)"
+        Add-TerminalLine $script:ResultsLabel.Text
+    }
+}
+
+function Set-TerminalMode {
+    param([Parameter(Mandatory)][ValidateSet('Normal', 'Collapsed', 'Expanded')][string]$Mode)
+    $script:TerminalMode = $Mode
+    switch ($Mode) {
+        'Collapsed' { $script:TerminalRow.Height = New-Object Windows.GridLength(58) }
+        'Expanded'  { $script:TerminalRow.Height = New-Object Windows.GridLength(420) }
+        default     { $script:TerminalRow.Height = New-Object Windows.GridLength(222) }
+    }
+    $script:TerminalOutput.Visibility = if ($Mode -eq 'Collapsed') { 'Collapsed' } else { 'Visible' }
+}
+
+function Restart-ScriptBoxAsAdministrator {
+    if ($script:IsAdministrator) {
+        Show-ScriptBoxDialog -Title 'Already elevated' -Message 'ScriptBox is already running with administrator rights.' -Buttons OK -Kind Info | Out-Null
+        return
+    }
+    try {
+        $handoff = "& { Invoke-RestMethod -UseBasicParsing '$($script:SelfSource)' | Invoke-Expression }"
+        $encoded = ConvertTo-EncodedPowerShellCommand -Text $handoff
+        Start-Process -FilePath 'powershell.exe' -Verb RunAs -WindowStyle Hidden -ArgumentList @(
+            '-NoLogo', '-NoProfile', '-STA', '-EncodedCommand', $encoded
+        ) -ErrorAction Stop
+        $script:Window.Close()
+    }
+    catch {
+        Show-ScriptBoxDialog -Title 'Administrator restart cancelled' -Message $_.Exception.Message -Buttons OK -Kind Info | Out-Null
+    }
+}
+
 function New-Card {
     param([Parameter(Mandatory)]$Item)
 
@@ -1088,7 +1699,7 @@ function New-Card {
     $border.Margin = '0,0,14,14'
     $border.Padding = '18'
     $border.CornerRadius = '15'
-    $border.Background = '#11172B'
+    $border.Background = $script:Window.Resources['CardBackground']
     $border.BorderBrush = $Item.Accent
     $border.BorderThickness = '1,1,1,2'
 
@@ -1109,14 +1720,14 @@ function New-Card {
     $name.Text = $Item.Name
     $name.FontSize = 18
     $name.FontWeight = 'Bold'
-    $name.Foreground = '#F8FAFC'
+    $name.Foreground = $script:Window.Resources['PrimaryText']
     $name.Margin = '0,7,0,0'
     [Windows.Controls.Grid]::SetRow($name, 1)
 
     $description = New-Object Windows.Controls.TextBlock
     $description.Text = $Item.Description
     $description.FontSize = 11
-    $description.Foreground = '#A8B3CA'
+    $description.Foreground = $script:Window.Resources['SecondaryText']
     $description.TextWrapping = 'Wrap'
     $description.Margin = '0,8,0,8'
     [Windows.Controls.Grid]::SetRow($description, 2)
@@ -1133,15 +1744,18 @@ function New-Card {
     $selectBox.Content = 'SELECT'
     $selectBox.FontSize = 9
     $selectBox.FontWeight = 'Bold'
-    $selectBox.Foreground = '#CBD5E1'
+    $selectBox.Foreground = $script:Window.Resources['SecondaryText']
     $selectBox.Margin = '0,0,10,0'
     $selectBox.VerticalAlignment = 'Center'
     $selectBox.IsChecked = $script:SelectedIds.Contains($Item.Id)
+    $setCatalogItemSelected = ${function:Set-CatalogItemSelected}
+    $showScriptInfo = ${function:Show-ScriptInfo}
+    $startCatalogItem = ${function:Start-CatalogItem}
     $selectBox.Add_Checked({
-        Set-CatalogItemSelected -Id $Item.Id -Selected $true
+        & $setCatalogItemSelected -Id $Item.Id -Selected $true
     }.GetNewClosure())
     $selectBox.Add_Unchecked({
-        Set-CatalogItemSelected -Id $Item.Id -Selected $false
+        & $setCatalogItemSelected -Id $Item.Id -Selected $false
     }.GetNewClosure())
     if ($Item.CanQueue) { $script:SelectionControls.Add($selectBox) }
     $badgeParts = @()
@@ -1170,7 +1784,7 @@ function New-Card {
     $infoButton.Padding = '0'
     $infoButton.ToolTip = 'What does this script do?'
     $infoButton.Margin = '0,0,7,0'
-    $infoButton.Add_Click({ Show-ScriptInfo -Item $Item }.GetNewClosure())
+    $infoButton.Add_Click({ & $showScriptInfo -Item $Item }.GetNewClosure())
 
     $runButton = New-Object Windows.Controls.Button
     $runButton.Content = 'RUN'
@@ -1180,7 +1794,7 @@ function New-Card {
     $runButton.BorderBrush = $Item.Accent
     $runButton.Foreground = '#050816'
     $runButton.ToolTip = 'Run this script'
-    $runButton.Add_Click({ Start-CatalogItem -Item $Item }.GetNewClosure())
+    $runButton.Add_Click({ & $startCatalogItem -Item $Item }.GetNewClosure())
     $script:RunButtons.Add($runButton)
 
     $actions.Children.Add($infoButton) | Out-Null
@@ -1308,11 +1922,72 @@ function Select-Category {
     $script:ActiveCategory = $Category
     foreach ($button in $script:CategoryHost.Children) {
         $selected = $button.Tag -eq $Category
-        $button.Background = if ($selected) { '#6D28D9' } else { '#11182D' }
-        $button.BorderBrush = if ($selected) { '#A855F7' } else { '#263252' }
-        $button.Foreground = if ($selected) { '#FFFFFF' } else { '#CBD5E1' }
+        $button.Background = if ($selected) { '#6D28D9' } else { $script:Window.Resources['ControlBackground'] }
+        $button.BorderBrush = if ($selected) { '#A855F7' } else { $script:Window.Resources['ThemeBorder'] }
+        $button.Foreground = if ($selected) { '#FFFFFF' } else { $script:Window.Resources['SecondaryText'] }
     }
     Render-Cards
+}
+
+function Render-ActiveSection {
+    switch ($script:ActiveSection) {
+        'Applications'  { Render-Applications }
+        'Network Tools' { Render-NetworkTools }
+        'Diagnostics'   { Render-Diagnostics }
+        'System Info'   { Render-SystemInfo }
+        default         { Render-Cards }
+    }
+}
+
+function Select-Section {
+    param(
+        [Parameter(Mandatory)]
+        [ValidateSet('Applications', 'Scripts', 'Network Tools', 'Diagnostics', 'System Info')]
+        [string]$Section
+    )
+
+    $script:ActiveSection = $Section
+    foreach ($entry in $script:SectionButtons.GetEnumerator()) {
+        $selected = $entry.Key -eq $Section
+        $entry.Value.Background = if ($selected) { '#6D28D9' } else { $script:Window.Resources['ControlBackground'] }
+        $entry.Value.BorderBrush = if ($selected) { '#A855F7' } else { $script:Window.Resources['ThemeBorder'] }
+        $entry.Value.Foreground = if ($selected) { '#FFFFFF' } else { $script:Window.Resources['SecondaryText'] }
+    }
+
+    $isScripts = $Section -eq 'Scripts'
+    $canSearch = $Section -in @('Applications', 'Scripts')
+    $script:ScriptTabsPanel.Visibility = if ($isScripts) { 'Visible' } else { 'Collapsed' }
+    $script:RunSelectedButton.Visibility = if ($isScripts) { 'Visible' } else { 'Collapsed' }
+    $script:ClearSelectionButton.Visibility = if ($isScripts) { 'Visible' } else { 'Collapsed' }
+    $script:SearchPanel.Visibility = if ($canSearch) { 'Visible' } else { 'Collapsed' }
+    $script:PageTitle.Text = $Section
+
+    switch ($Section) {
+        'Applications'  { $script:ResultsLabel.Text = 'Publisher references only—no automatic downloads or installs.' }
+        'Scripts'       { $script:ResultsLabel.Text = 'Safe, visible execution with live output.' }
+        'Network Tools' { $script:ResultsLabel.Text = 'Built-in Windows network tools.' }
+        'Diagnostics'   { $script:ResultsLabel.Text = 'Read-only network health checks.' }
+        'System Info'   { $script:ResultsLabel.Text = 'Read-only machine details.' }
+    }
+
+    Render-ActiveSection
+}
+
+$sections = @('Applications', 'Scripts', 'Network Tools', 'Diagnostics', 'System Info')
+foreach ($sectionName in $sections) {
+    $sectionButton = New-Object Windows.Controls.Button
+    $sectionButton.Content = $sectionName.ToUpperInvariant()
+    $sectionButton.Tag = $sectionName
+    $sectionButton.Height = 42
+    $sectionButton.HorizontalContentAlignment = 'Left'
+    $sectionButton.Margin = '0,0,0,8'
+    $sectionButton.Padding = '13,8'
+    $sectionButton.Add_Click({
+        param($sender, $eventArgs)
+        Select-Section -Section ([string]$sender.Tag)
+    })
+    $script:SectionButtons[$sectionName] = $sectionButton
+    $script:SectionHost.Children.Add($sectionButton) | Out-Null
 }
 
 $categories = @('All scripts') + @($script:Catalog.Category | Sort-Object -Unique)
@@ -1321,9 +1996,9 @@ foreach ($categoryName in $categories) {
     $count = if ($categoryName -eq 'All scripts') { @($script:Catalog | Where-Object ShowInAllScripts).Count } else { @($script:Catalog | Where-Object Category -eq $categoryName).Count }
     $button.Content = "$categoryName   $count"
     $button.Tag = $categoryName
-    $button.HorizontalContentAlignment = 'Left'
-    $button.Margin = '0,0,0,8'
-    $button.Padding = '12,9'
+    $button.HorizontalContentAlignment = 'Center'
+    $button.Margin = '0,0,8,0'
+    $button.Padding = '12,8'
     $button.Add_Click({
         param($sender, $eventArgs)
         Select-Category -Category ([string]$sender.Tag)
@@ -1331,12 +2006,70 @@ foreach ($categoryName in $categories) {
     $script:CategoryHost.Children.Add($button) | Out-Null
 }
 
-$script:SearchBox.Add_TextChanged({ Render-Cards })
+$script:SearchBox.Add_TextChanged({ Render-ActiveSection })
 $script:RunSelectedButton.Add_Click({ Start-SelectedItems })
 $script:ClearSelectionButton.Add_Click({ Clear-SelectedItems })
+$script:ThemeToggleButton.Add_Click({
+    Set-ScriptBoxTheme -Theme $(if ($script:IsDarkTheme) { 'Light' } else { 'Dark' })
+    Select-Section -Section $script:ActiveSection
+})
+$script:ExpandTerminalButton.Add_Click({
+    Set-TerminalMode -Mode $(if ($script:TerminalMode -eq 'Expanded') { 'Normal' } else { 'Expanded' })
+})
+$script:CollapseTerminalButton.Add_Click({
+    Set-TerminalMode -Mode $(if ($script:TerminalMode -eq 'Collapsed') { 'Normal' } else { 'Collapsed' })
+})
+$script:ElevateButton.Add_Click({ Restart-ScriptBoxAsAdministrator })
+$script:ControlPanelButton.Add_Click({
+    try { Start-Process -FilePath 'control.exe' -ErrorAction Stop }
+    catch { Add-TerminalLine "Could not open Control Panel: $($_.Exception.Message)" }
+})
+$script:SettingsButton.Add_Click({
+    try { Start-Process -FilePath 'ms-settings:' -ErrorAction Stop }
+    catch { Add-TerminalLine "Could not open Settings: $($_.Exception.Message)" }
+})
+$script:OpenTerminalButton.Add_Click({
+    try { Start-Process -FilePath 'wt.exe' -ErrorAction Stop }
+    catch {
+        try { Start-Process -FilePath 'powershell.exe' -ErrorAction Stop }
+        catch { Add-TerminalLine "Could not open a terminal: $($_.Exception.Message)" }
+    }
+})
 $script:ClearTerminalButton.Add_Click({
     $script:TerminalOutput.Clear()
     Add-TerminalLine 'Terminal cleared. ScriptBox is ready.'
+})
+
+$script:Window.Add_PreviewKeyDown({
+    param($sender, $eventArgs)
+    $control = ([Windows.Input.Keyboard]::Modifiers -band [Windows.Input.ModifierKeys]::Control) -ne 0
+    if ($control) {
+        switch ($eventArgs.Key) {
+            'K' {
+                if ($script:ActiveSection -notin @('Applications', 'Scripts')) { Select-Section -Section 'Scripts' }
+                $script:SearchBox.Focus() | Out-Null
+                $script:SearchBox.SelectAll()
+                $eventArgs.Handled = $true
+            }
+            'D1' { Select-Section -Section 'Applications'; $eventArgs.Handled = $true }
+            'D2' { Select-Section -Section 'Scripts'; $eventArgs.Handled = $true }
+            'D3' { Select-Section -Section 'Network Tools'; $eventArgs.Handled = $true }
+            'D4' { Select-Section -Section 'Diagnostics'; $eventArgs.Handled = $true }
+            'D5' { Select-Section -Section 'System Info'; $eventArgs.Handled = $true }
+            'T' {
+                Set-TerminalMode -Mode $(if ($script:TerminalMode -eq 'Expanded') { 'Normal' } else { 'Expanded' })
+                $eventArgs.Handled = $true
+            }
+            'Oem3' {
+                Set-TerminalMode -Mode $(if ($script:TerminalMode -eq 'Collapsed') { 'Normal' } else { 'Collapsed' })
+                $eventArgs.Handled = $true
+            }
+        }
+    }
+    elseif ($eventArgs.Key -eq [Windows.Input.Key]::Escape -and -not [string]::IsNullOrWhiteSpace($script:SearchBox.Text)) {
+        $script:SearchBox.Clear()
+        $eventArgs.Handled = $true
+    }
 })
 
 $script:OutputTimer = New-Object Windows.Threading.DispatcherTimer
@@ -1428,6 +2161,7 @@ if ($localIcon) {
 
 $script:PrivilegeLabel.Text = if ($script:IsAdministrator) { '● RUNNING AS ADMIN' } else { '● STANDARD SESSION' }
 $script:PrivilegeLabel.Foreground = if ($script:IsAdministrator) { '#FDE68A' } else { '#A7F3D0' }
+$script:ElevateButton.Visibility = if ($script:IsAdministrator) { 'Collapsed' } else { 'Visible' }
 $script:Window.Title = "ScriptBox $($script:Version)"
 
 $script:Window.Add_Closing({
@@ -1443,8 +2177,12 @@ $script:Window.Add_Closing({
     Remove-ScriptBoxTempRoot
 })
 
+Set-ScriptBoxTheme -Theme 'Dark'
 Select-Category -Category 'All scripts'
-Add-TerminalLine "ScriptBox $($script:Version) ready. Select i for details, RUN for one task, or select several cards and RUN SELECTED."
+Select-Section -Section 'Scripts'
+Add-TerminalLine "ScriptBox $($script:Version) ready. Use the left sections, or press Ctrl+1 through Ctrl+5 to move between them."
+Add-TerminalLine 'Applications contains publisher links only; it never downloads or installs software.'
+Add-TerminalLine 'In Scripts, select i for details, RUN for one task, or select several cards and RUN SELECTED.'
 Add-TerminalLine 'Catalog scripts are downloaded on demand only when their run begins.'
 Add-TerminalLine 'Temporary runtime data will be removed when this window closes.'
 $script:OutputTimer.Start()
@@ -1453,6 +2191,38 @@ if ($env:SCRIPTBOX_TEST_MODE -eq '1') {
     if ($script:Catalog.Count -ne 28 -or @($script:Catalog | Where-Object InlineScript).Count -ne 0) {
         throw 'Lazy catalog validation failed.'
     }
+    if ($script:SectionButtons.Count -ne 5 -or
+        @($script:SectionButtons.Keys | Sort-Object) -join '|' -ne 'Applications|Diagnostics|Network Tools|Scripts|System Info') {
+        throw 'Primary section navigation validation failed.'
+    }
+    Select-Section -Section 'Applications'
+    if ($script:ActiveSection -ne 'Applications' -or
+        $script:CardsHost.Children.Count -ne $script:ApplicationLinks.Count -or
+        $script:ScriptTabsPanel.Visibility -ne 'Collapsed' -or
+        $script:RunSelectedButton.Visibility -ne 'Collapsed' -or
+        $script:SearchPanel.Visibility -ne 'Visible') {
+        throw 'Non-installing Applications section validation failed.'
+    }
+    Select-Section -Section 'Scripts'
+    if ($script:ActiveSection -ne 'Scripts' -or
+        $script:ScriptTabsPanel.Visibility -ne 'Visible' -or
+        $script:RunSelectedButton.Visibility -ne 'Visible') {
+        throw 'Scripts section and top-tab validation failed.'
+    }
+    Set-ScriptBoxTheme -Theme 'Light'
+    if ($script:IsDarkTheme -or $script:ThemeToggleButton.Content -ne 'DARK') {
+        throw 'Light theme validation failed.'
+    }
+    Set-ScriptBoxTheme -Theme 'Dark'
+    Set-TerminalMode -Mode 'Collapsed'
+    if ($script:TerminalMode -ne 'Collapsed' -or $script:TerminalOutput.Visibility -ne 'Collapsed') {
+        throw 'Collapsed terminal validation failed.'
+    }
+    Set-TerminalMode -Mode 'Expanded'
+    if ($script:TerminalMode -ne 'Expanded' -or $script:TerminalOutput.Visibility -ne 'Visible') {
+        throw 'Expanded terminal validation failed.'
+    }
+    Set-TerminalMode -Mode 'Normal'
     $cautionItems = @($script:Catalog | Where-Object Category -eq 'Warning - Use With Caution')
     $eraseItem = @($script:Catalog | Where-Object Id -eq 'erase-reinstall-windows')
     if ($cautionItems.Count -ne 2 -or @($cautionItems | Where-Object ShowInAllScripts).Count -ne 0 -or
@@ -1598,7 +2368,7 @@ if ($env:SCRIPTBOX_TEST_MODE -eq '1') {
         throw 'Sequential queue validation failed.'
     }
 
-    Write-Output "ScriptBox validation passed: $($script:Catalog.Count) lazy catalog items, category navigation, matching dialogs, selection controls, sequential queue, and output bridge."
+    Write-Output "ScriptBox validation passed: five shell sections, $($script:Catalog.Count) lazy catalog items, top-tab navigation, matching dialogs, selection controls, sequential queue, and output bridge."
     $script:OutputTimer.Stop()
     Remove-ScriptBoxTempRoot
     return
