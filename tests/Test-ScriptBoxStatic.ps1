@@ -16,6 +16,7 @@ $usbDevicesPath = Join-Path $scriptsPath 'Show-ConnectedUSBDevices.ps1'
 $wolWatcherPath = Join-Path $scriptsPath 'Watch-WakeOnLanPackets.ps1'
 $hpBiosPath = Join-Path $scriptsPath 'Configure-HPBIOS.ps1'
 $hpG3G5WolKvmPath = Join-Path $scriptsPath 'Configure-HPEliteDesk800G5WolKvm.ps1'
+$lenovoBiosPath = Join-Path $scriptsPath 'Configure-LenovoBIOS.ps1'
 $files = @($launcherPath) + @(Get-ChildItem -LiteralPath $scriptsPath -Filter '*.ps1' -File | Select-Object -ExpandProperty FullName)
 
 $parseFailures = New-Object System.Collections.Generic.List[string]
@@ -309,6 +310,50 @@ if ($hpG3G5WolKvmSource -match '\[\(\]\(%28\)|\[\{\]\(%7B\)|\[powerParameters\]\
 }
 if ($hpG3G5WolKvmSource -match '\$script:(?:Report|HadWarnings|HpBiosSettings)') {
     throw 'The HP G3/G5 Mini workflow must not use runner-level script scope for its mutable workflow state.'
+}
+
+$lenovoBiosSource = Get-Content -Raw -LiteralPath $lenovoBiosPath
+foreach ($requiredLenovoText in @(
+    'ThinkCentre M710q Tiny WOL/KVM profile',
+    "@('10MQ', '10MR', '10MS', '10MT', '10N3', '10QR', '10YC')",
+    'function Find-LenovoSettingExact',
+    "[StringComparison]::OrdinalIgnoreCase",
+    "Lenovo_BiosPasswordSettings",
+    'PasswordState -band 2',
+    'Lenovo_WmiOpcodeInterface',
+    'WmiOpcodePasswordAdmin:',
+    'Lenovo_SetBiosSetting',
+    'Lenovo_SaveBiosSettings',
+    'Lenovo_DiscardBiosSettings',
+    "'Onboard Ethernet Controller'",
+    "'Wake on LAN'",
+    "'Enhanced Power Saving Mode'",
+    "'Smart Power On'",
+    "'After Power Loss'",
+    "'USB Support'",
+    "'USB Legacy Support'",
+    "'Front USB Ports'",
+    "'Rear USB Ports'",
+    'ALL LENOVO BIOS SETTINGS AFTER CONFIGURATION',
+    'Show-ResultPopup',
+    'Saved $($WorkflowState.ChangedCount) staged Lenovo BIOS change(s) in one operation.'
+)) {
+    if ($lenovoBiosSource -notmatch [regex]::Escape($requiredLenovoText)) {
+        throw "The Lenovo M710q BIOS workflow is missing required behavior: $requiredLenovoText"
+    }
+}
+foreach ($unsafeLegacyLenovoText in @(
+    'Wake on WLAN',
+    'Wake-on-LAN password policy',
+    'Startup/POST delay',
+    'Boot audio alerts disabled'
+)) {
+    if ($lenovoBiosSource -match [regex]::Escape($unsafeLegacyLenovoText)) {
+        throw "The Lenovo BIOS workflow still contains the unsafe legacy target: $unsafeLegacyLenovoText"
+    }
+}
+if ($lenovoBiosSource -match '\$script:(?:Report|HadWarnings|Results)') {
+    throw 'The Lenovo BIOS workflow must not use runner-level script scope for mutable workflow state.'
 }
 foreach ($supportedModel in @(
     'HP EliteDesk 800 G3 Desktop Mini',
