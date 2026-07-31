@@ -11,7 +11,7 @@ Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 
 $script:AppName = 'ScriptBox'
-$script:Version = '3.2.0'
+$script:Version = '3.3.0'
 $script:Repository = 'https://github.com/GoblinRules/ScriptBox'
 $script:SelfSource = 'https://raw.githubusercontent.com/GoblinRules/ScriptBox/main/ScriptBox.ps1'
 $script:IconSource = 'https://raw.githubusercontent.com/GoblinRules/ScriptBox/main/assets/icon.png'
@@ -134,7 +134,7 @@ function New-CatalogItem {
         [bool]$CanQueue = $true,
         [bool]$ShowInAllScripts = $true,
         [int]$RunOrder = 100,
-        [string]$Accent = '#22D3EE'
+        [string]$Accent = '#818CF8'
     )
 
     if ($InputVariable -and $InputVariable -notmatch '^[A-Za-z_][A-Za-z0-9_]*$') {
@@ -196,12 +196,12 @@ $script:Catalog = @(
     New-CatalogItem -Id 'always-on-power' -Name 'Keep PC Awake' -Category 'Power' -Description 'Keeps the display, computer, and laptop active for reliable remote access.' -ScriptPath 'Configure-AlwaysOnPower.ps1' -Impact 'Changes the active power plan, disables sleep and hibernation, and makes lid-close and power-button actions do nothing.' -RequiresAdmin $true -Accent '#22D3EE' -SuccessMessage 'The active power plan now keeps the computer awake on AC and battery.'
     New-CatalogItem -Id 'keep-network-active' -Name 'Keep Network Active' -Category 'Power' -Description 'Reduces adapter and power-plan sleep behavior so networking remains available while locked.' -ScriptPath 'Keep-NetworkActive.ps1' -Impact 'Disables several network, PCIe, and USB power-saving features and writes a log under C:\Tools\Logs.' -RequiresAdmin $true -Accent '#2DD4BF' -SuccessMessage 'Supported network power-saving settings were disabled to improve locked-session connectivity.'
     New-CatalogItem -Id 'hide-shutdown-options' -Name 'Hide Shutdown Options' -Category 'Security' -Description 'Hides Shutdown, Restart, Sleep, and Hibernate for existing and future Windows users without changing notification-area policy.' -ScriptPath 'Hide-ShutdownOptions.ps1' -Impact 'Sets only the documented per-user NoClose policy, including offline and Default user registry hives. It does not alter Windows PolicyManager defaults or system-tray policy.' -RequiresAdmin $true -ConflictGroup 'power-menu-visibility' -Accent '#C084FC' -SuccessMessage 'Power commands are hidden for existing profiles and the Default user profile without changing notification-area policy.'
-    New-CatalogItem -Id 'repair-power-menu-system-tray' -Name 'Repair System Tray and Audio' -Category 'Fixes' -Description 'Restores machine audio and reverses legacy ScriptBox policies that can disturb Windows 11 shell surfaces.' -ScriptPath 'Repair-PowerMenuAndSystemTray.ps1' -Impact 'Removes ScriptBox''s local fDisableCam policy, returns Windows Audio Endpoint Builder and Windows Audio to Automatic/Running, restores the four legacy PolicyManager Start defaults, and removes ScriptBox''s NoClose value from existing and future-user profiles. Sign out or restart afterward to reload the shell.' -RequiresAdmin $true -ConflictGroup 'power-menu-visibility' -Accent '#34D399' -SuccessMessage 'Machine audio and legacy ScriptBox shell policies were restored; sign out or restart Windows to reload the system tray.'
+    New-CatalogItem -Id 'repair-power-menu-system-tray' -Name 'Repair System Tray and Audio' -Category 'Fixes' -Description 'Restores machine audio and reverses legacy ScriptBox policies that can disturb Windows 11 shell surfaces.' -ScriptPath 'Repair-PowerMenuAndSystemTray.ps1' -Impact 'Removes ScriptBox''s local fDisableCam policy, returns Windows Audio Endpoint Builder and Windows Audio to Automatic/Running, re-enables audio devices disabled by Disable Machine Audio, restores the four legacy PolicyManager Start defaults, and removes ScriptBox''s NoClose value from existing and future-user profiles. Sign out or restart afterward to reload the shell.' -RequiresAdmin $true -ConflictGroup 'power-menu-visibility' -Accent '#34D399' -SuccessMessage 'Machine audio and legacy ScriptBox shell policies were restored; sign out or restart Windows to reload the system tray.'
     New-CatalogItem -Id 'idle-lock-10-minutes' -Name 'Lock After 10 Minutes' -Category 'Security' -Description 'Locks signed-in Windows sessions after ten minutes without keyboard or mouse activity.' -ScriptPath 'Configure-IdleLock.ps1' -Impact 'Sets computer and user inactivity policies and refreshes Group Policy. A sign-out or restart may be needed.' -RequiresAdmin $true -Accent '#F472B6' -SuccessMessage 'Windows is configured to lock idle sessions after ten minutes.'
     New-CatalogItem -Id 'allow-password-signin' -Name 'Allow Password Sign-in' -Category 'Security' -Description 'Allows Microsoft-account users to choose password sign-in while keeping their existing PIN.' -ScriptPath 'Allow-PasswordSignIn.ps1' -Impact 'Sets the machine-wide DevicePasswordLessBuildVersion registry value to 0. Existing Windows Hello PINs are not removed.' -RequiresAdmin $true -Accent '#C084FC' -SuccessMessage 'Password sign-in is permitted and existing Windows Hello PINs remain available.'
     New-CatalogItem -Id 'enable-location-services' -Name 'Enable Location Services' -Category 'Windows' -Description 'Removes common policy blocks and restores the Windows Geolocation Service.' -ScriptPath 'Enable-LocationServices.ps1' -Impact 'Changes machine policy values, configures lfsvc for demand start, starts it, and refreshes Group Policy.' -RequiresAdmin $true -Accent '#34D399' -SuccessMessage 'Location policy restrictions were removed and the Geolocation Service was restored.'
     New-CatalogItem -Id 'disable-ipv6' -Name 'Disable IPv6 Components' -Category 'Windows' -Description 'Uses the supported DisabledComponents registry policy to disable Windows IPv6 components.' -ScriptPath 'Disable-IPv6.ps1' -Impact 'Sets a machine-wide networking registry value to 0xFF. A restart is required and IPv6-dependent services may be affected.' -RequiresAdmin $true -Accent '#F59E0B' -SuccessMessage 'IPv6 components are configured as disabled and the change will apply after restart.'
-    New-CatalogItem -Id 'disable-machine-audio' -Name 'Disable Machine Audio' -Category 'Windows' -Description 'Disables physical and Remote Desktop audio while keeping Audio Endpoint Builder available for the Windows 11 system tray.' -ScriptPath 'Disable-MachineAudio.ps1' -Impact 'Disables and stops Windows Audio and blocks RDP playback redirection, so playback and microphone/input audio are unavailable. Audio Endpoint Builder remains Automatic and running to preserve endpoint enumeration for the Windows 11 volume and Quick Settings tray surface. Use Fixes > Repair System Tray and Audio to reverse it.' -RequiresAdmin $true -Accent '#F472B6' -SuccessMessage 'Machine audio is disabled while Audio Endpoint Builder remains available to the Windows 11 shell.'
+    New-CatalogItem -Id 'disable-machine-audio' -Name 'Disable Machine Audio' -Category 'Windows' -Description 'Disables every audio device and Remote Desktop audio while keeping the Windows audio services running for the Windows 11 system tray.' -ScriptPath 'Disable-MachineAudio.ps1' -Impact 'Disables all present audio (MEDIA-class) devices and blocks RDP playback redirection, so playback and microphone/input audio are unavailable. Windows Audio and Audio Endpoint Builder stay Automatic and running so the Windows 11 taskbar, volume flyout, and Quick Settings remain responsive. Use Fixes > Repair System Tray and Audio to reverse it.' -RequiresAdmin $true -Accent '#F472B6' -SuccessMessage 'All audio devices are disabled while the Windows audio services keep the Windows 11 shell responsive.'
     New-CatalogItem -Id 'enable-rdp-current-user' -Name 'Enable Remote Desktop' -Category 'Remote Access' -Description 'Enables Remote Desktop for this PC with NLA and permits the interactively signed-in user.' -ScriptPath 'Enable-RDPForCurrentUser.ps1' -Impact 'Enables the machine-level Remote Desktop setting and policy, starts Remote Desktop Services, opens inbound TCP/UDP 3389 firewall rules, and changes local group membership.' -RequiresAdmin $true -Accent '#22D3EE' -SuccessMessage 'Remote Desktop was enabled for this PC, with NLA, firewall access, and user membership configured successfully.'
     New-CatalogItem -Id 'windows-update-security' -Name 'Security-Focused Updates' -Category 'Windows Update' -Description 'Keeps monthly updates automatic while blocking previews and deferring feature upgrades.' -ScriptPath 'Configure-WindowsUpdateSecurityFocused.ps1' -Impact 'Changes Windows Update policy, excludes drivers, defers feature upgrades for 365 days, and starts an update scan.' -RequiresAdmin $true -ConflictGroup 'windows-update-mode' -Accent '#34D399' -SuccessMessage 'Windows Update now prioritizes monthly quality updates without optional previews or drivers.'
     New-CatalogItem -Id 'windows-update-manual' -Name 'Manual Updates Only' -Category 'Windows Update' -Description 'Stops automatic update downloads and installations while keeping manual checking available.' -ScriptPath 'Configure-WindowsUpdateManual.ps1' -Impact 'Removes conflicting update policy and disables automatic Windows Update downloads and installation.' -RequiresAdmin $true -ConflictGroup 'windows-update-mode' -Accent '#F59E0B' -SuccessMessage 'Windows Update is now manual only; someone must regularly check and install security updates.'
@@ -274,17 +274,25 @@ $windowXaml = @'
         WindowStartupLocation="CenterScreen" Background="{DynamicResource AppBackground}" Foreground="{DynamicResource PrimaryText}"
         FontFamily="Segoe UI" UseLayoutRounding="True">
     <Window.Resources>
-        <SolidColorBrush x:Key="AppBackground" Color="#09090F"/>
-        <SolidColorBrush x:Key="SidebarBackground" Color="#0E0E17"/>
-        <SolidColorBrush x:Key="SurfaceBackground" Color="#151520"/>
-        <SolidColorBrush x:Key="CardBackground" Color="#12121B"/>
-        <SolidColorBrush x:Key="ControlBackground" Color="#1A1A29"/>
-        <SolidColorBrush x:Key="InputBackground" Color="#101019"/>
+        <SolidColorBrush x:Key="AppBackground" Color="#0A0A0F"/>
+        <SolidColorBrush x:Key="SidebarBackground" Color="#0E0E16"/>
+        <SolidColorBrush x:Key="SurfaceBackground" Color="#12121A"/>
+        <SolidColorBrush x:Key="CardBackground" Color="#80161622"/>
+        <SolidColorBrush x:Key="ControlBackground" Color="#1A1A28"/>
+        <SolidColorBrush x:Key="InputBackground" Color="#1A1A28"/>
         <SolidColorBrush x:Key="TerminalBackground" Color="#08080D"/>
-        <SolidColorBrush x:Key="ThemeBorder" Color="#29293A"/>
-        <SolidColorBrush x:Key="PrimaryText" Color="#F8FAFC"/>
-        <SolidColorBrush x:Key="SecondaryText" Color="#A8B3CA"/>
-        <SolidColorBrush x:Key="MutedText" Color="#64748B"/>
+        <SolidColorBrush x:Key="ThemeBorder" Color="#14FFFFFF"/>
+        <SolidColorBrush x:Key="PrimaryText" Color="#F0F0F5"/>
+        <SolidColorBrush x:Key="SecondaryText" Color="#9898B0"/>
+        <SolidColorBrush x:Key="MutedText" Color="#5A5A75"/>
+        <LinearGradientBrush x:Key="AccentGradient" StartPoint="0,0" EndPoint="1,1">
+            <GradientStop Color="#6366F1" Offset="0"/>
+            <GradientStop Color="#4F46E5" Offset="1"/>
+        </LinearGradientBrush>
+        <LinearGradientBrush x:Key="DangerGradient" StartPoint="0,0" EndPoint="1,1">
+            <GradientStop Color="#EF4444" Offset="0"/>
+            <GradientStop Color="#DC2626" Offset="1"/>
+        </LinearGradientBrush>
         <Style TargetType="Button">
             <Setter Property="Foreground" Value="{DynamicResource PrimaryText}"/>
             <Setter Property="Background" Value="{DynamicResource ControlBackground}"/>
@@ -297,7 +305,7 @@ $windowXaml = @'
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
                         <Border x:Name="ButtonBorder" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
-                                BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="7" Padding="{TemplateBinding Padding}">
+                                BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="6" Padding="{TemplateBinding Padding}">
                             <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
                                               VerticalAlignment="{TemplateBinding VerticalContentAlignment}"/>
                         </Border>
@@ -314,13 +322,13 @@ $windowXaml = @'
             <Setter Property="Foreground" Value="{DynamicResource PrimaryText}"/>
             <Setter Property="Background" Value="{DynamicResource InputBackground}"/>
             <Setter Property="BorderBrush" Value="{DynamicResource ThemeBorder}"/>
-            <Setter Property="CaretBrush" Value="#22D3EE"/>
+            <Setter Property="CaretBrush" Value="#6366F1"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="TextBox">
                         <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
-                                BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="8">
+                                BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="6">
                             <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}"/>
                         </Border>
                     </ControlTemplate>
@@ -352,12 +360,14 @@ $windowXaml = @'
                     <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
                 <StackPanel Orientation="Horizontal">
-                    <Border Width="44" Height="44" CornerRadius="12" Background="#111A32" BorderBrush="#635BFF" BorderThickness="1">
+                    <Border Width="44" Height="44" CornerRadius="10" Background="#1A6366F1" BorderBrush="#6366F1" BorderThickness="1">
                         <Image x:Name="AppIcon" Width="38" Height="38" Stretch="Uniform"/>
                     </Border>
                     <StackPanel Margin="11,1,0,0">
                         <TextBlock Text="SCRIPTBOX" FontSize="18" FontWeight="Bold" Foreground="{DynamicResource PrimaryText}"/>
-                        <TextBlock x:Name="VersionLabel" Text="PORTABLE" FontSize="9" FontWeight="SemiBold" Foreground="#818CF8"/>
+                        <Border Background="#266366F1" CornerRadius="20" Padding="8,2" HorizontalAlignment="Left" Margin="0,2,0,0">
+                            <TextBlock x:Name="VersionLabel" Text="PORTABLE" FontSize="9" FontWeight="SemiBold" Foreground="#818CF8"/>
+                        </Border>
                     </StackPanel>
                 </StackPanel>
 
@@ -375,7 +385,7 @@ $windowXaml = @'
                         <Button x:Name="SettingsButton" Content="⚙  Settings" Height="34" FontSize="10" HorizontalContentAlignment="Left" Padding="11,6" Margin="0,0,0,6"/>
                         <Button x:Name="OpenTerminalButton" Content="▰  Terminal" Height="34" FontSize="10" HorizontalContentAlignment="Left" Padding="11,6" Margin="0,0,0,6"/>
                         <Button x:Name="ElevateButton" Content="↻  Restart as Admin" Height="34" FontSize="10" HorizontalContentAlignment="Left" Padding="11,6" Margin="0,0,0,9"/>
-                        <TextBlock x:Name="PrivilegeLabel" FontSize="10" FontWeight="SemiBold" Foreground="#A7F3D0" Margin="2,0,0,4"/>
+                        <TextBlock x:Name="PrivilegeLabel" FontSize="10" FontWeight="SemiBold" Foreground="#22C55E" Margin="2,0,0,4"/>
                         <TextBlock Text="ScriptBox stays portable" FontSize="9" Foreground="{DynamicResource MutedText}" Margin="2,0,0,0"/>
                     </StackPanel>
                 </Border>
@@ -397,7 +407,7 @@ $windowXaml = @'
                 <Button x:Name="ClearSelectionButton" Content="CLEAR" Height="42" Padding="12,7" Margin="0,0,8,0"
                         Background="{DynamicResource ControlBackground}" BorderBrush="{DynamicResource ThemeBorder}" Foreground="{DynamicResource SecondaryText}"/>
                 <Button x:Name="RunSelectedButton" Content="RUN SELECTED (0)" Height="42" Padding="14,7"
-                        Background="#635BFF" BorderBrush="#756DFF" Foreground="White"/>
+                        Background="{DynamicResource AccentGradient}" BorderBrush="#6366F1" Foreground="White"/>
                 <Button x:Name="ThemeToggleButton" Content="LIGHT" Height="42" Padding="12,7" Margin="8,0,0,0"/>
             </StackPanel>
         </Grid>
@@ -405,10 +415,10 @@ $windowXaml = @'
         <ScrollViewer Grid.Column="1" Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Margin="26,12,12,8">
             <StackPanel>
                 <StackPanel Margin="6,0,14,20">
-                    <TextBlock x:Name="PageTitle" Text="Scripts" FontSize="29" FontWeight="Bold" Foreground="{DynamicResource PrimaryText}"/>
+                    <TextBlock x:Name="PageTitle" Text="Scripts" FontSize="28" FontWeight="Bold" Foreground="{DynamicResource PrimaryText}"/>
                     <TextBlock x:Name="ResultsLabel" Text="Safe, visible execution with live output." FontSize="13" Foreground="{DynamicResource SecondaryText}" Margin="0,5,0,0"/>
                 </StackPanel>
-                <Border x:Name="ScriptTabsPanel" Background="{DynamicResource SurfaceBackground}" BorderBrush="{DynamicResource ThemeBorder}" BorderThickness="1" CornerRadius="12" Padding="10" Margin="0,0,14,14">
+                <Border x:Name="ScriptTabsPanel" Background="{DynamicResource SurfaceBackground}" BorderBrush="{DynamicResource ThemeBorder}" BorderThickness="1" CornerRadius="14" Padding="10" Margin="0,0,14,14">
                     <WrapPanel x:Name="CategoryHost"/>
                 </Border>
                 <WrapPanel x:Name="CardsHost"/>
@@ -421,12 +431,14 @@ $windowXaml = @'
                     <RowDefinition Height="39"/>
                     <RowDefinition Height="*"/>
                 </Grid.RowDefinitions>
-                <Border BorderBrush="#202A48" BorderThickness="0,0,0,1" Padding="14,0">
+                <Border BorderBrush="#0FFFFFFF" BorderThickness="0,0,0,1" Padding="14,0">
                     <Grid>
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                            <Ellipse Width="8" Height="8" Fill="#34D399" Margin="0,0,9,0"/>
-                            <TextBlock Text="TERMINAL" FontSize="10" FontWeight="Bold" Foreground="#CBD5E1" VerticalAlignment="Center"/>
-                            <TextBlock x:Name="TerminalStatus" Text="  READY" FontSize="10" FontWeight="Bold" Foreground="#34D399" VerticalAlignment="Center"/>
+                            <Ellipse Width="10" Height="10" Fill="#EF4444" Margin="0,0,6,0"/>
+                            <Ellipse Width="10" Height="10" Fill="#F59E0B" Margin="0,0,6,0"/>
+                            <Ellipse Width="10" Height="10" Fill="#22C55E" Margin="0,0,9,0"/>
+                            <TextBlock Text="TERMINAL" FontSize="10" FontWeight="Bold" Foreground="#9898B0" VerticalAlignment="Center"/>
+                            <TextBlock x:Name="TerminalStatus" Text="  READY" FontSize="10" FontWeight="Bold" Foreground="#22C55E" VerticalAlignment="Center"/>
                         </StackPanel>
                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
                             <Button x:Name="ExpandTerminalButton" Content="EXPAND" FontSize="9" Padding="9,5" Margin="0,0,6,0"/>
@@ -437,7 +449,7 @@ $windowXaml = @'
                 </Border>
                 <TextBox x:Name="TerminalOutput" Grid.Row="1" IsReadOnly="True" AcceptsReturn="True" TextWrapping="NoWrap"
                          VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" BorderThickness="0"
-                         FontFamily="Cascadia Mono,Consolas" FontSize="11" Padding="14,10" Background="{DynamicResource TerminalBackground}" Foreground="#A7F3D0"/>
+                         FontFamily="Cascadia Mono,Consolas" FontSize="11" Padding="14,10" Background="{DynamicResource TerminalBackground}" Foreground="#9898B0"/>
             </Grid>
         </Border>
     </Grid>
@@ -573,7 +585,7 @@ function Show-ScriptBoxDialog {
         WindowStartupLocation="CenterOwner" WindowStyle="None" AllowsTransparency="True"
         Background="Transparent" Foreground="#F8FAFC" FontFamily="Segoe UI"
         ResizeMode="NoResize" ShowInTaskbar="False">
-    <Border Background="#0D1224" BorderBrush="#A855F7" BorderThickness="1" CornerRadius="16">
+    <Border Background="#12121A" BorderBrush="#14FFFFFF" BorderThickness="1" CornerRadius="14">
         <Border.Effect>
             <DropShadowEffect Color="#000000" BlurRadius="28" ShadowDepth="8" Opacity="0.65"/>
         </Border.Effect>
@@ -583,16 +595,10 @@ function Show-ScriptBoxDialog {
                 <RowDefinition Height="*"/>
                 <RowDefinition Height="70"/>
             </Grid.RowDefinitions>
-            <Border x:Name="PopupDragRegion" CornerRadius="15,15,0,0" BorderBrush="#2D3760" BorderThickness="0,0,0,1">
-                <Border.Background>
-                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
-                        <GradientStop Color="#171F3A" Offset="0"/>
-                        <GradientStop Color="#25113D" Offset="1"/>
-                    </LinearGradientBrush>
-                </Border.Background>
+            <Border x:Name="PopupDragRegion" CornerRadius="14,14,0,0" Background="#12121A" BorderBrush="#0FFFFFFF" BorderThickness="0,0,0,1">
                 <Grid Margin="18,0,10,0">
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                        <Ellipse Width="8" Height="8" Fill="#22D3EE" Margin="0,0,10,0"/>
+                        <Ellipse Width="8" Height="8" Fill="#6366F1" Margin="0,0,10,0"/>
                         <TextBlock x:Name="PopupTitle" FontSize="13" FontWeight="Bold" Foreground="#F8FAFC" VerticalAlignment="Center"/>
                     </StackPanel>
                     <Button x:Name="PopupCloseButton" Content="×" Width="34" Height="30" Padding="0"
@@ -607,9 +613,9 @@ function Show-ScriptBoxDialog {
                     <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
                 <Border x:Name="PopupMarkBorder" Width="44" Height="44" CornerRadius="22" VerticalAlignment="Top"
-                        Background="#241535" BorderBrush="#F472B6" BorderThickness="1">
+                        Background="#1AEF4444" BorderBrush="#EF4444" BorderThickness="1">
                     <TextBlock x:Name="PopupMark" Text="!" HorizontalAlignment="Center" VerticalAlignment="Center"
-                               FontSize="22" FontWeight="Bold" Foreground="#F472B6"/>
+                               FontSize="22" FontWeight="Bold" Foreground="#EF4444"/>
                 </Border>
                 <StackPanel Grid.Column="1" VerticalAlignment="Center">
                     <TextBlock x:Name="PopupMessage" TextWrapping="Wrap" FontSize="13" LineHeight="20" Foreground="#DCE5F5"/>
@@ -618,12 +624,14 @@ function Show-ScriptBoxDialog {
                 </StackPanel>
             </Grid>
 
-            <Border Grid.Row="2" Background="#090D1A" CornerRadius="0,0,15,15" BorderBrush="#202A48" BorderThickness="0,1,0,0">
+            <Border Grid.Row="2" Background="#12121A" CornerRadius="0,0,14,14" BorderBrush="#0FFFFFFF" BorderThickness="0,1,0,0">
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="20,0">
                     <Button x:Name="PopupSecondaryButton" Content="CANCEL" MinWidth="104" Height="36" Margin="0,0,10,0"
-                            Background="#151D35" BorderBrush="#334263" Foreground="#CBD5E1"/>
+                            Background="#1A1A28" BorderBrush="#14FFFFFF" Foreground="#9898B0"/>
                     <Button x:Name="PopupPrimaryButton" Content="CONTINUE" MinWidth="112" Height="36"
-                            Background="#22D3EE" BorderBrush="#67E8F9" Foreground="#050816"/>
+                            BorderThickness="0" Foreground="#FFFFFF">
+                        <Button.Background><LinearGradientBrush StartPoint="0,0" EndPoint="1,1"><GradientStop Color="#6366F1" Offset="0"/><GradientStop Color="#4F46E5" Offset="1"/></LinearGradientBrush></Button.Background>
+                    </Button>
                 </StackPanel>
             </Border>
         </Grid>
@@ -639,8 +647,8 @@ function Show-ScriptBoxDialog {
 
     if ($Kind -eq 'Info') {
         $popup.FindName('PopupMark').Text = 'i'
-        $popup.FindName('PopupMark').Foreground = '#22D3EE'
-        $popup.FindName('PopupMarkBorder').BorderBrush = '#22D3EE'
+        $popup.FindName('PopupMark').Foreground = '#6366F1'
+        $popup.FindName('PopupMarkBorder').BorderBrush = '#6366F1'
         $popup.FindName('PopupHint').Text = 'ScriptBox keeps its temporary output until the task finishes.'
     }
 
@@ -685,7 +693,7 @@ function Show-ScriptBoxInputDialog {
         WindowStartupLocation="CenterOwner" WindowStyle="None" AllowsTransparency="True"
         Background="Transparent" Foreground="#F8FAFC" FontFamily="Segoe UI"
         ResizeMode="NoResize" ShowInTaskbar="False">
-    <Border Background="#0D1224" BorderBrush="#22D3EE" BorderThickness="1" CornerRadius="16">
+    <Border Background="#12121A" BorderBrush="#14FFFFFF" BorderThickness="1" CornerRadius="14">
         <Border.Effect>
             <DropShadowEffect Color="#000000" BlurRadius="28" ShadowDepth="8" Opacity="0.65"/>
         </Border.Effect>
@@ -695,16 +703,10 @@ function Show-ScriptBoxInputDialog {
                 <RowDefinition Height="*"/>
                 <RowDefinition Height="70"/>
             </Grid.RowDefinitions>
-            <Border x:Name="InputDragRegion" CornerRadius="15,15,0,0" BorderBrush="#2D3760" BorderThickness="0,0,0,1">
-                <Border.Background>
-                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
-                        <GradientStop Color="#171F3A" Offset="0"/>
-                        <GradientStop Color="#102B3D" Offset="1"/>
-                    </LinearGradientBrush>
-                </Border.Background>
+            <Border x:Name="InputDragRegion" CornerRadius="14,14,0,0" Background="#12121A" BorderBrush="#0FFFFFFF" BorderThickness="0,0,0,1">
                 <Grid Margin="18,0,10,0">
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                        <Ellipse Width="8" Height="8" Fill="#34D399" Margin="0,0,10,0"/>
+                        <Ellipse Width="8" Height="8" Fill="#22C55E" Margin="0,0,10,0"/>
                         <TextBlock x:Name="InputTitle" FontSize="13" FontWeight="Bold" Foreground="#F8FAFC" VerticalAlignment="Center"/>
                     </StackPanel>
                     <Button x:Name="InputCloseButton" Content="×" Width="34" Height="30" Padding="0"
@@ -716,21 +718,23 @@ function Show-ScriptBoxInputDialog {
             <StackPanel Grid.Row="1" Margin="26,24,26,24">
                 <TextBlock x:Name="InputMessage" TextWrapping="Wrap" FontSize="13" LineHeight="20" Foreground="#DCE5F5"/>
                 <TextBox x:Name="InputValue" Margin="0,18,0,0" Height="42" Padding="12,9"
-                         Background="#060912" Foreground="#67E8F9" CaretBrush="#67E8F9"
-                         BorderBrush="#314164" BorderThickness="1" FontFamily="Cascadia Mono,Consolas" FontSize="13"/>
+                         Background="#1A1A28" Foreground="#F0F0F5" CaretBrush="#6366F1"
+                         BorderBrush="#14FFFFFF" BorderThickness="1" FontFamily="Cascadia Mono,Consolas" FontSize="13"/>
                 <PasswordBox x:Name="SecretInputValue" Visibility="Collapsed" Margin="0,18,0,0" Height="42" Padding="12,9"
-                             Background="#060912" Foreground="#67E8F9" CaretBrush="#67E8F9"
-                             BorderBrush="#314164" BorderThickness="1" FontFamily="Cascadia Mono,Consolas" FontSize="13"/>
+                             Background="#1A1A28" Foreground="#F0F0F5" CaretBrush="#6366F1"
+                             BorderBrush="#14FFFFFF" BorderThickness="1" FontFamily="Cascadia Mono,Consolas" FontSize="13"/>
                 <TextBlock x:Name="InputHint" Text="The value is passed only to this run." Margin="2,10,0,0"
                            FontSize="10" FontWeight="SemiBold" Foreground="#64748B"/>
             </StackPanel>
 
-            <Border Grid.Row="2" Background="#090D1A" CornerRadius="0,0,15,15" BorderBrush="#202A48" BorderThickness="0,1,0,0">
+            <Border Grid.Row="2" Background="#12121A" CornerRadius="0,0,14,14" BorderBrush="#0FFFFFFF" BorderThickness="0,1,0,0">
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="20,0">
                     <Button x:Name="InputCancelButton" Content="CANCEL" MinWidth="104" Height="36" Margin="0,0,10,0"
-                            Background="#151D35" BorderBrush="#334263" Foreground="#CBD5E1"/>
+                            Background="#1A1A28" BorderBrush="#14FFFFFF" Foreground="#9898B0"/>
                     <Button x:Name="InputRunButton" Content="CONTINUE" MinWidth="112" Height="36"
-                            Background="#22D3EE" BorderBrush="#67E8F9" Foreground="#050816"/>
+                            BorderThickness="0" Foreground="#FFFFFF">
+                        <Button.Background><LinearGradientBrush StartPoint="0,0" EndPoint="1,1"><GradientStop Color="#6366F1" Offset="0"/><GradientStop Color="#4F46E5" Offset="1"/></LinearGradientBrush></Button.Background>
+                    </Button>
                 </StackPanel>
             </Border>
         </Grid>
@@ -766,7 +770,7 @@ function Show-ScriptBoxInputDialog {
         $normalizedValue = if ($null -eq $value) { '' } elseif ($Secret) { [string]$value } else { $value.Trim() }
         if ($RequiredValue -and -not [string]::Equals($normalizedValue, $RequiredValue, [StringComparison]::Ordinal)) {
             $inputHint.Text = "Enter $RequiredValue exactly; capitalization and internal spaces must match."
-            $inputHint.Foreground = '#F472B6'
+            $inputHint.Foreground = '#EF4444'
             $inputBox.Focus() | Out-Null
             $inputBox.SelectAll()
             return
@@ -829,18 +833,13 @@ function Show-ScriptInfo {
         WindowStartupLocation="CenterOwner" Background="Transparent" Foreground="#F8FAFC"
         FontFamily="Segoe UI" ResizeMode="CanResizeWithGrip" ShowInTaskbar="False"
         WindowStyle="None" AllowsTransparency="True">
-    <Border Background="#0B1020" BorderBrush="#7C3AED" BorderThickness="1" CornerRadius="16">
+    <Border Background="#12121A" BorderBrush="#14FFFFFF" BorderThickness="1" CornerRadius="14">
         <Grid>
             <Grid.RowDefinitions><RowDefinition Height="52"/><RowDefinition Height="*"/></Grid.RowDefinitions>
-            <Border x:Name="InfoDragRegion" CornerRadius="15,15,0,0" BorderBrush="#2D3760" BorderThickness="0,0,0,1">
-                <Border.Background>
-                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
-                        <GradientStop Color="#171F3A" Offset="0"/><GradientStop Color="#25113D" Offset="1"/>
-                    </LinearGradientBrush>
-                </Border.Background>
+            <Border x:Name="InfoDragRegion" CornerRadius="14,14,0,0" Background="#12121A" BorderBrush="#0FFFFFFF" BorderThickness="0,0,0,1">
                 <Grid Margin="18,0,10,0">
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                        <Ellipse Width="8" Height="8" Fill="#22D3EE" Margin="0,0,10,0"/>
+                        <Ellipse Width="8" Height="8" Fill="#6366F1" Margin="0,0,10,0"/>
                         <TextBlock Text="SCRIPT DETAILS" FontSize="11" FontWeight="Bold" Foreground="#E2E8F0" VerticalAlignment="Center"/>
                     </StackPanel>
                     <Button x:Name="WindowCloseButton" Content="×" Width="34" Height="30" Padding="0" HorizontalAlignment="Right"
@@ -853,11 +852,11 @@ function Show-ScriptInfo {
                     <RowDefinition Height="*"/><RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
                 <TextBlock x:Name="InfoTitle" FontSize="25" FontWeight="Bold"/>
-                <TextBlock x:Name="InfoDescription" Grid.Row="1" Margin="0,9,0,0" TextWrapping="Wrap" Foreground="#CBD5E1" FontSize="13"/>
-                <Border Grid.Row="2" Margin="0,18,0,16" Padding="14" CornerRadius="10" Background="#121A31" BorderBrush="#2B385B" BorderThickness="1">
+                <TextBlock x:Name="InfoDescription" Grid.Row="1" Margin="0,9,0,0" TextWrapping="Wrap" Foreground="#9898B0" FontSize="13"/>
+                <Border Grid.Row="2" Margin="0,18,0,16" Padding="14" CornerRadius="10" Background="#1A1A28" BorderBrush="#14FFFFFF" BorderThickness="1">
                     <StackPanel>
-                        <TextBlock x:Name="InfoImpact" TextWrapping="Wrap" Foreground="#FDE68A" FontSize="12"/>
-                        <TextBlock x:Name="InfoRequirements" TextWrapping="Wrap" Foreground="#A7F3D0" FontSize="12" Margin="0,8,0,0"/>
+                        <TextBlock x:Name="InfoImpact" TextWrapping="Wrap" Foreground="#F59E0B" FontSize="12"/>
+                        <TextBlock x:Name="InfoRequirements" TextWrapping="Wrap" Foreground="#9898B0" FontSize="12" Margin="0,8,0,0"/>
                     </StackPanel>
                 </Border>
                 <Grid Grid.Row="3">
@@ -865,12 +864,14 @@ function Show-ScriptInfo {
                     <TextBlock Text="SCRIPT PREVIEW" FontSize="10" FontWeight="Bold" Foreground="#64748B" Margin="2,0,0,8"/>
                     <TextBox x:Name="InfoCode" Grid.Row="1" IsReadOnly="True" AcceptsReturn="True" TextWrapping="NoWrap"
                              VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" Padding="14"
-                             Background="#060912" Foreground="#67E8F9" BorderBrush="#263252" BorderThickness="1"
+                             Background="#08080D" Foreground="#9898B0" BorderBrush="#14FFFFFF" BorderThickness="1"
                              FontFamily="Cascadia Mono,Consolas" FontSize="11"/>
                 </Grid>
                 <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,18,0,0">
-                    <Button x:Name="CopyButton" Content="COPY SCRIPT" Margin="0,0,10,0" Padding="15,8" Background="#17213C" Foreground="#F8FAFC" BorderBrush="#33466E"/>
-                    <Button x:Name="CloseButton" Content="CLOSE" Padding="20,8" Background="#7C3AED" Foreground="White" BorderBrush="#A855F7"/>
+                    <Button x:Name="CopyButton" Content="COPY SCRIPT" Margin="0,0,10,0" Padding="15,8" Background="#1A1A28" Foreground="#9898B0" BorderBrush="#14FFFFFF"/>
+                    <Button x:Name="CloseButton" Content="CLOSE" Padding="20,8" Foreground="White" BorderThickness="0">
+                        <Button.Background><LinearGradientBrush StartPoint="0,0" EndPoint="1,1"><GradientStop Color="#6366F1" Offset="0"/><GradientStop Color="#4F46E5" Offset="1"/></LinearGradientBrush></Button.Background>
+                    </Button>
                 </StackPanel>
             </Grid>
         </Grid>
@@ -975,18 +976,13 @@ function Show-ScriptBoxResult {
         WindowStartupLocation="CenterOwner" Background="Transparent" Foreground="#F8FAFC"
         FontFamily="Segoe UI" ResizeMode="CanResizeWithGrip" ShowInTaskbar="False"
         WindowStyle="None" AllowsTransparency="True">
-    <Border x:Name="ResultFrame" Background="#0B1020" BorderBrush="#34D399" BorderThickness="1" CornerRadius="16">
+    <Border x:Name="ResultFrame" Background="#12121A" BorderBrush="#22C55E" BorderThickness="1" CornerRadius="14">
         <Grid>
             <Grid.RowDefinitions><RowDefinition Height="52"/><RowDefinition Height="*"/></Grid.RowDefinitions>
-            <Border x:Name="ResultDragRegion" CornerRadius="15,15,0,0" BorderBrush="#2D3760" BorderThickness="0,0,0,1">
-                <Border.Background>
-                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
-                        <GradientStop Color="#171F3A" Offset="0"/><GradientStop Color="#102B3D" Offset="1"/>
-                    </LinearGradientBrush>
-                </Border.Background>
+            <Border x:Name="ResultDragRegion" CornerRadius="14,14,0,0" Background="#12121A" BorderBrush="#0FFFFFFF" BorderThickness="0,0,0,1">
                 <Grid Margin="18,0,10,0">
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                        <Ellipse x:Name="ResultDot" Width="8" Height="8" Fill="#34D399" Margin="0,0,10,0"/>
+                        <Ellipse x:Name="ResultDot" Width="8" Height="8" Fill="#22C55E" Margin="0,0,10,0"/>
                         <TextBlock Text="SCRIPT RESULTS" FontSize="11" FontWeight="Bold" Foreground="#E2E8F0"/>
                     </StackPanel>
                     <Button x:Name="ResultCloseX" Content="×" Width="34" Height="30" Padding="0" HorizontalAlignment="Right"
@@ -1002,28 +998,30 @@ function Show-ScriptBoxResult {
                 <TextBlock x:Name="ResultHeadline" Grid.Row="1" Margin="0,5,0,0" FontSize="25" FontWeight="Bold" TextWrapping="Wrap"/>
                 <Grid Grid.Row="2" Margin="0,18,0,16">
                     <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
-                    <Border Margin="0,0,8,0" Padding="14" CornerRadius="10" Background="#0D241D" BorderBrush="#237A55" BorderThickness="1">
-                        <StackPanel><TextBlock Text="GOOD" Foreground="#86EFAC" FontSize="10" FontWeight="Bold"/><TextBlock x:Name="GoodCount" Foreground="#D1FAE5" FontSize="24" FontWeight="Bold"/></StackPanel>
+                    <Border Margin="0,0,8,0" Padding="14" CornerRadius="10" Background="#1A22C55E" BorderBrush="#4D22C55E" BorderThickness="1">
+                        <StackPanel><TextBlock Text="GOOD" Foreground="#22C55E" FontSize="10" FontWeight="Bold"/><TextBlock x:Name="GoodCount" Foreground="#F0F0F5" FontSize="24" FontWeight="Bold"/></StackPanel>
                     </Border>
-                    <Border Grid.Column="1" Margin="4,0" Padding="14" CornerRadius="10" Background="#2A2110" BorderBrush="#A16207" BorderThickness="1">
-                        <StackPanel><TextBlock Text="REVIEW" Foreground="#FDE68A" FontSize="10" FontWeight="Bold"/><TextBlock x:Name="ReviewCount" Foreground="#FEF3C7" FontSize="24" FontWeight="Bold"/></StackPanel>
+                    <Border Grid.Column="1" Margin="4,0" Padding="14" CornerRadius="10" Background="#1AF59E0B" BorderBrush="#4DF59E0B" BorderThickness="1">
+                        <StackPanel><TextBlock Text="REVIEW" Foreground="#F59E0B" FontSize="10" FontWeight="Bold"/><TextBlock x:Name="ReviewCount" Foreground="#F0F0F5" FontSize="24" FontWeight="Bold"/></StackPanel>
                     </Border>
-                    <Border Grid.Column="2" Margin="8,0,0,0" Padding="14" CornerRadius="10" Background="#2A141E" BorderBrush="#BE185D" BorderThickness="1">
-                        <StackPanel><TextBlock Text="PROBLEMS" Foreground="#F9A8D4" FontSize="10" FontWeight="Bold"/><TextBlock x:Name="ProblemCount" Foreground="#FCE7F3" FontSize="24" FontWeight="Bold"/></StackPanel>
+                    <Border Grid.Column="2" Margin="8,0,0,0" Padding="14" CornerRadius="10" Background="#1AEF4444" BorderBrush="#4DEF4444" BorderThickness="1">
+                        <StackPanel><TextBlock Text="PROBLEMS" Foreground="#EF4444" FontSize="10" FontWeight="Bold"/><TextBlock x:Name="ProblemCount" Foreground="#F0F0F5" FontSize="24" FontWeight="Bold"/></StackPanel>
                     </Border>
                 </Grid>
                 <Grid Grid.Row="3">
                     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
-                    <Border Padding="14" CornerRadius="10" Background="#121A31" BorderBrush="#2B385B" BorderThickness="1" Margin="0,0,0,14">
+                    <Border Padding="14" CornerRadius="10" Background="#1A1A28" BorderBrush="#14FFFFFF" BorderThickness="1" Margin="0,0,0,14">
                         <TextBlock x:Name="ResultSummary" TextWrapping="Wrap" Foreground="#DCE5F5" FontSize="13" LineHeight="20"/>
                     </Border>
                     <TextBox x:Name="ResultOutput" Grid.Row="1" IsReadOnly="True" AcceptsReturn="True" TextWrapping="NoWrap"
                              VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" Padding="14"
-                             Background="#060912" Foreground="#A7F3D0" BorderBrush="#263252" BorderThickness="1"
+                             Background="#08080D" Foreground="#9898B0" BorderBrush="#14FFFFFF" BorderThickness="1"
                              FontFamily="Cascadia Mono,Consolas" FontSize="11"/>
                 </Grid>
                 <Button x:Name="ResultClose" Grid.Row="4" Content="DONE" HorizontalAlignment="Right" Margin="0,18,0,0"
-                        Padding="22,8" Background="#7C3AED" Foreground="White" BorderBrush="#A855F7"/>
+                        Padding="22,8" Foreground="White" BorderThickness="0">
+                    <Button.Background><LinearGradientBrush StartPoint="0,0" EndPoint="1,1"><GradientStop Color="#6366F1" Offset="0"/><GradientStop Color="#4F46E5" Offset="1"/></LinearGradientBrush></Button.Background>
+                </Button>
             </Grid>
         </Grid>
     </Border>
@@ -1040,7 +1038,7 @@ function Show-ScriptBoxResult {
     $dialog.FindName('GoodCount').Text = [string]$GoodCount
     $dialog.FindName('ReviewCount').Text = [string]$WarningCount
     $dialog.FindName('ProblemCount').Text = [string]$ProblemCount
-    $accent = switch ($State) { 'Error' { '#F472B6' } 'Warning' { '#F59E0B' } default { '#34D399' } }
+    $accent = switch ($State) { 'Error' { '#EF4444' } 'Warning' { '#F59E0B' } default { '#22C55E' } }
     $dialog.FindName('ResultFrame').BorderBrush = $accent
     $dialog.FindName('ResultDot').Fill = $accent
     $dialog.FindName('ResultClose').Add_Click({ $dialog.Close() }.GetNewClosure())
@@ -1219,14 +1217,14 @@ exit $exitCode
             FromQueue   = [bool]$FromQueue
         }
         $script:TerminalStatus.Text = '  RUNNING'
-        $script:TerminalStatus.Foreground = '#22D3EE'
+        $script:TerminalStatus.Foreground = '#3B82F6'
         Set-RunButtonsEnabled -Enabled $false
     }
     catch {
         Remove-Item -LiteralPath $logPath -Force -ErrorAction SilentlyContinue
         Add-TerminalLine ("Could not launch {0}: {1}" -f $Item.Name, $_.Exception.Message)
         $script:TerminalStatus.Text = '  READY'
-        $script:TerminalStatus.Foreground = '#34D399'
+        $script:TerminalStatus.Foreground = '#22C55E'
         if ($FromQueue) {
             $script:QueueResults.Add((New-FriendlyResult -Item $Item -ExitCode 1 -Output ("[ERROR] " + $_.Exception.Message))) | Out-Null
             Start-NextQueuedItem
@@ -1253,32 +1251,32 @@ function Set-ScriptBoxTheme {
     $script:IsDarkTheme = $Theme -eq 'Dark'
     $colors = if ($script:IsDarkTheme) {
         @{
-            AppBackground     = '#09090F'
-            SidebarBackground = '#0E0E17'
-            SurfaceBackground = '#151520'
-            CardBackground    = '#12121B'
-            ControlBackground = '#1A1A29'
-            InputBackground   = '#101019'
+            AppBackground     = '#0A0A0F'
+            SidebarBackground = '#0E0E16'
+            SurfaceBackground = '#12121A'
+            CardBackground    = '#80161622'
+            ControlBackground = '#1A1A28'
+            InputBackground   = '#1A1A28'
             TerminalBackground = '#08080D'
-            ThemeBorder       = '#29293A'
-            PrimaryText       = '#F8FAFC'
-            SecondaryText     = '#A8B3CA'
-            MutedText         = '#64748B'
+            ThemeBorder       = '#14FFFFFF'
+            PrimaryText       = '#F0F0F5'
+            SecondaryText     = '#9898B0'
+            MutedText         = '#5A5A75'
         }
     }
     else {
         @{
-            AppBackground     = '#F1F5F9'
-            SidebarBackground = '#FFFFFF'
-            SurfaceBackground = '#E2E8F0'
-            CardBackground    = '#FFFFFF'
-            ControlBackground = '#E2E8F0'
+            AppBackground     = '#F5F5F8'
+            SidebarBackground = '#EEEEF4'
+            SurfaceBackground = '#FFFFFF'
+            CardBackground    = '#CCFFFFFF'
+            ControlBackground = '#E8E8EE'
             InputBackground   = '#FFFFFF'
-            TerminalBackground = '#0F172A'
-            ThemeBorder       = '#CBD5E1'
-            PrimaryText       = '#0F172A'
-            SecondaryText     = '#475569'
-            MutedText         = '#64748B'
+            TerminalBackground = '#FAFAFA'
+            ThemeBorder       = '#14000000'
+            PrimaryText       = '#1A1A2E'
+            SecondaryText     = '#555570'
+            MutedText         = '#8888A0'
         }
     }
 
@@ -1286,7 +1284,7 @@ function Set-ScriptBoxTheme {
         Set-ThemeBrushColor -Key $entry.Key -Color $entry.Value
     }
     $script:ThemeToggleButton.Content = if ($script:IsDarkTheme) { 'LIGHT' } else { 'DARK' }
-    $script:TerminalOutput.Foreground = if ($script:IsDarkTheme) { '#A7F3D0' } else { '#86EFAC' }
+    $script:TerminalOutput.Foreground = if ($script:IsDarkTheme) { '#9898B0' } else { '#555570' }
 }
 
 function Open-ReferenceUri {
@@ -1490,7 +1488,7 @@ function New-ApplicationCatalogItem {
         -Name ("{0} — {1}" -f $Application.Name, $Action.Text) -Category 'Applications' `
         -Description $Action.Impact -InlineScript ([scriptblock]::Create($scriptText)) `
         -RequiresAdmin ([bool]$Action.RequiresAdmin) -RequiresConfirmation $false `
-        -CanQueue $true -ResultMode 'Summary' -Accent '#635BFF' `
+        -CanQueue $true -ResultMode 'Summary' -Accent '#6366F1' `
         -SuccessMessage ("{0}: {1} completed." -f $Application.Name, $Action.Text)
 }
 
@@ -1550,11 +1548,11 @@ function Start-SelectedApplications {
 
 function New-TagPill {
     param([Parameter(Mandatory)][string]$Tag)
-    $colors = @{ NETWORK='#10294B'; UTILITY='#0D3B28'; POWER='#4A2D08'; SYSTEM='#30205B'; SECURITY='#4B1722'; BROWSER='#073B4A' }
-    $foregrounds = @{ NETWORK='#60A5FA'; UTILITY='#4ADE80'; POWER='#FBBF24'; SYSTEM='#C4B5FD'; SECURITY='#FB7185'; BROWSER='#22D3EE' }
+    $colors = @{ NETWORK='#1F3B82F6'; UTILITY='#1F22C55E'; POWER='#1FF59E0B'; SYSTEM='#1F8B5CF6'; SECURITY='#1FEF4444'; BROWSER='#1F06B6D4' }
+    $foregrounds = @{ NETWORK='#60A5FA'; UTILITY='#4ADE80'; POWER='#FBBF24'; SYSTEM='#A78BFA'; SECURITY='#F87171'; BROWSER='#22D3EE' }
     $pill = New-Object Windows.Controls.Border
     $pill.Background = $colors[$Tag]
-    $pill.CornerRadius = '7'
+    $pill.CornerRadius = '20'
     $pill.Padding = '7,2'
     $pill.Margin = '0,0,6,0'
     $text = New-Object Windows.Controls.TextBlock
@@ -1574,7 +1572,7 @@ function New-ApplicationCard {
     $border.Height = 246
     $border.Margin = '0,0,14,14'
     $border.Padding = '16'
-    $border.CornerRadius = '12'
+    $border.CornerRadius = '14'
     $border.Background = $script:Window.Resources['CardBackground']
     $border.BorderBrush = $script:Window.Resources['ThemeBorder']
     $border.BorderThickness = '1'
@@ -1602,9 +1600,9 @@ function New-ApplicationCard {
 
     $applicationStatus = Get-ApplicationStatus -Application $Application
     $statusPill = New-Object Windows.Controls.Border
-    $statusPill.Background = if ($applicationStatus -in @('INSTALLED','AVAILABLE')) { '#0D3B28' } else { '#191A27' }
-    $statusPill.CornerRadius = '8'
-    $statusPill.Padding = '7,3'
+    $statusPill.Background = if ($applicationStatus -in @('INSTALLED','AVAILABLE')) { '#1A22C55E' } else { '#0AFFFFFF' }
+    $statusPill.CornerRadius = '20'
+    $statusPill.Padding = '10,4'
     $statusPill.Margin = '7,0,7,0'
     [Windows.Controls.Grid]::SetColumn($statusPill, 1)
     $statusLabel = New-Object Windows.Controls.TextBlock
@@ -1666,8 +1664,8 @@ function New-ApplicationCard {
         $actionButton.Height = 34
         $actionButton.Padding = '7,4'
         $actionButton.Margin = if ($actionCount -gt 1 -and $actions.Children.Count -eq 0) { '0,0,8,0' } else { '0' }
-        $actionButton.Background = if ($actions.Children.Count -eq 0) { '#635BFF' } else { $script:Window.Resources['ControlBackground'] }
-        $actionButton.BorderBrush = if ($actions.Children.Count -eq 0) { '#756DFF' } else { $script:Window.Resources['ThemeBorder'] }
+        $actionButton.Background = if ($actions.Children.Count -eq 0) { $script:Window.Resources['AccentGradient'] } else { $script:Window.Resources['ControlBackground'] }
+        $actionButton.BorderBrush = if ($actions.Children.Count -eq 0) { '#6366F1' } else { $script:Window.Resources['ThemeBorder'] }
         $actionButton.Foreground = if ($actions.Children.Count -eq 0) { '#FFFFFF' } else { $script:Window.Resources['SecondaryText'] }
         $actionButton.FontSize = 9
         $actionButton.Add_Click({ & $startApplicationAction -Application $Application -Action $action }.GetNewClosure())
@@ -1708,7 +1706,7 @@ function Render-Applications {
 function New-FeatureCard {
     param(
         [Parameter(Mandatory)][string]$Title,
-        [Parameter(Mandatory)][string]$Description,
+        [Parameter(Mandatory)][AllowEmptyString()][string]$Description,
         [string]$Accent = '#22D3EE',
         [double]$Width = 500,
         [double]$MinHeight = 230
@@ -1719,7 +1717,7 @@ function New-FeatureCard {
     $border.MinHeight = $MinHeight
     $border.Margin = '0,0,14,14'
     $border.Padding = '18'
-    $border.CornerRadius = '12'
+    $border.CornerRadius = '14'
     $border.Background = $script:Window.Resources['CardBackground']
     $border.BorderBrush = $script:Window.Resources['ThemeBorder']
     $border.BorderThickness = '1'
@@ -1738,6 +1736,7 @@ function New-FeatureCard {
     $subheading.TextWrapping = 'Wrap'
     $subheading.Foreground = $script:Window.Resources['SecondaryText']
     $subheading.Margin = '0,6,0,14'
+    if ([string]::IsNullOrWhiteSpace($Description)) { $subheading.Visibility = 'Collapsed' }
     $stack.Children.Add($subheading) | Out-Null
 
     $body = New-Object Windows.Controls.StackPanel
@@ -1775,9 +1774,9 @@ function New-FeatureButton {
     )
     $button = New-Object Windows.Controls.Button
     $button.Content = $Text
-    $button.Background = $Accent
-    $button.BorderBrush = $Accent
-    $button.Foreground = '#050816'
+    $button.Background = $script:Window.Resources['AccentGradient']
+    $button.BorderThickness = '0'
+    $button.Foreground = 'White'
     $button.Margin = '0,4,7,0'
     $button.Padding = '12,7'
     return $button
@@ -2087,7 +2086,7 @@ function New-Card {
     $border.Height = 202
     $border.Margin = '0,0,14,14'
     $border.Padding = '18'
-    $border.CornerRadius = '12'
+    $border.CornerRadius = '14'
     $border.Background = $script:Window.Resources['CardBackground']
     $border.BorderBrush = $script:Window.Resources['ThemeBorder']
     $border.BorderThickness = '1'
@@ -2157,7 +2156,7 @@ function New-Card {
     $badge.Text = ($badgeParts -join '  •  ')
     $badge.FontSize = 9
     $badge.FontWeight = 'Bold'
-    $badge.Foreground = if ($Item.RequiresAdmin) { '#FDE68A' } else { '#86EFAC' }
+    $badge.Foreground = if ($Item.RequiresAdmin) { '#F59E0B' } else { '#22C55E' }
     if ($Item.CanQueue) { $badges.Children.Add($selectBox) | Out-Null }
     $badges.Children.Add($badge) | Out-Null
     [Windows.Controls.Grid]::SetColumn($badges, 0)
@@ -2179,8 +2178,8 @@ function New-Card {
     $runButton.Content = 'RUN'
     $runButton.Height = 29
     $runButton.Padding = '14,4'
-    $runButton.Background = '#635BFF'
-    $runButton.BorderBrush = '#756DFF'
+    $runButton.Background = $script:Window.Resources['AccentGradient']
+    $runButton.BorderBrush = '#6366F1'
     $runButton.Foreground = '#FFFFFF'
     $runButton.ToolTip = 'Run this script'
     $runButton.Add_Click({ & $startCatalogItem -Item $Item }.GetNewClosure())
@@ -2279,7 +2278,7 @@ function Start-NextQueuedItem {
 
     $script:IsQueueRunning = $false
     $script:TerminalStatus.Text = '  READY'
-    $script:TerminalStatus.Foreground = '#34D399'
+    $script:TerminalStatus.Foreground = '#22C55E'
     if ($script:QueueTitle -eq 'Selected applications') {
         $script:ApplicationStatusCache = @{}
         if ($script:ActiveSection -eq 'Applications') { Render-Applications }
@@ -2318,9 +2317,9 @@ function Select-Category {
     $script:ActiveCategory = $Category
     foreach ($button in $script:CategoryHost.Children) {
         $selected = $button.Tag -eq $Category
-        $button.Background = if ($selected) { '#6D28D9' } else { $script:Window.Resources['ControlBackground'] }
-        $button.BorderBrush = if ($selected) { '#A855F7' } else { $script:Window.Resources['ThemeBorder'] }
-        $button.Foreground = if ($selected) { '#FFFFFF' } else { $script:Window.Resources['SecondaryText'] }
+        $button.Background = if ($selected) { '#266366F1' } else { $script:Window.Resources['ControlBackground'] }
+        $button.BorderBrush = if ($selected) { '#806366F1' } else { $script:Window.Resources['ThemeBorder'] }
+        $button.Foreground = if ($selected) { '#818CF8' } else { $script:Window.Resources['SecondaryText'] }
     }
     Render-Cards
 }
@@ -2345,9 +2344,9 @@ function Select-Section {
     $script:ActiveSection = $Section
     foreach ($entry in $script:SectionButtons.GetEnumerator()) {
         $selected = $entry.Key -eq $Section
-        $entry.Value.Background = if ($selected) { '#6D28D9' } else { $script:Window.Resources['ControlBackground'] }
-        $entry.Value.BorderBrush = if ($selected) { '#A855F7' } else { $script:Window.Resources['ThemeBorder'] }
-        $entry.Value.Foreground = if ($selected) { '#FFFFFF' } else { $script:Window.Resources['SecondaryText'] }
+        $entry.Value.Background = if ($selected) { '#266366F1' } else { 'Transparent' }
+        $entry.Value.BorderBrush = if ($selected) { '#806366F1' } else { 'Transparent' }
+        $entry.Value.Foreground = if ($selected) { '#818CF8' } else { $script:Window.Resources['SecondaryText'] }
     }
 
     $isScripts = $Section -eq 'Scripts'
@@ -2386,6 +2385,9 @@ foreach ($sectionName in $sections) {
     $sectionButton.HorizontalContentAlignment = 'Left'
     $sectionButton.Margin = '0,0,0,8'
     $sectionButton.Padding = '12,8'
+    $sectionButton.Background = 'Transparent'
+    $sectionButton.BorderBrush = 'Transparent'
+    $sectionButton.Foreground = $script:Window.Resources['SecondaryText']
 
     $navContent = New-Object Windows.Controls.Grid
     $navContent.Width = 172
@@ -2542,11 +2544,11 @@ $script:OutputTimer.Add_Tick({
             $script:RunState = $null
             if ($exitCode -eq '0') {
                 $script:TerminalStatus.Text = '  READY'
-                $script:TerminalStatus.Foreground = '#34D399'
+                $script:TerminalStatus.Foreground = '#22C55E'
                 Add-TerminalLine "$finishedName finished."
             } else {
                 $script:TerminalStatus.Text = '  ATTENTION'
-                $script:TerminalStatus.Foreground = '#F472B6'
+                $script:TerminalStatus.Foreground = '#EF4444'
                 Add-TerminalLine "$finishedName finished with an error. Review the output above."
             }
 
@@ -2600,7 +2602,7 @@ if ($localIcon) {
 }
 
 $script:PrivilegeLabel.Text = if ($script:IsAdministrator) { '● RUNNING AS ADMIN' } else { '● STANDARD SESSION' }
-$script:PrivilegeLabel.Foreground = if ($script:IsAdministrator) { '#FDE68A' } else { '#A7F3D0' }
+$script:PrivilegeLabel.Foreground = if ($script:IsAdministrator) { '#22C55E' } else { '#F59E0B' }
 $script:VersionLabel.Text = "PORTABLE  •  v$($script:Version)"
 $script:ElevateButton.Visibility = if ($script:IsAdministrator) { 'Collapsed' } else { 'Visible' }
 $script:Window.Title = "ScriptBox $($script:Version)"
@@ -2753,7 +2755,7 @@ if ($env:SCRIPTBOX_TEST_MODE -eq '1') {
         -Output $friendlyTest.Output -GoodCount 1 -WarningCount 1 -State Warning
 
     if ($script:RunSelectedButton.IsHitTestVisible -or $script:ClearSelectionButton.IsHitTestVisible -or
-        $script:RunSelectedButton.Opacity -ge 1 -or $script:RunSelectedButton.Background.Color.ToString() -ne '#FF635BFF') {
+        $script:RunSelectedButton.Opacity -ge 1 -or $script:RunSelectedButton.Background.GradientStops[0].Color.ToString() -ne '#FF6366F1') {
         throw 'Themed inactive selection control validation failed.'
     }
     $script:SelectionControls[0].IsChecked = $true
@@ -2773,7 +2775,7 @@ if ($env:SCRIPTBOX_TEST_MODE -eq '1') {
     }
     Clear-SelectedItems
     if ($script:SelectedIds.Count -ne 0 -or $script:RunSelectedButton.IsHitTestVisible -or
-        $script:ClearSelectionButton.IsHitTestVisible -or $script:ClearSelectionButton.Background.Color.ToString() -ne '#FF1A1A29') {
+        $script:ClearSelectionButton.IsHitTestVisible -or $script:ClearSelectionButton.Background.Color.ToString() -ne '#FF1A1A28') {
         throw 'Themed cleared selection control validation failed.'
     }
 

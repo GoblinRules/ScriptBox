@@ -210,7 +210,9 @@ foreach ($requiredRepairAudioText in @(
     'Set-Service -Name $serviceName -StartupType Automatic',
     'Start-Service -Name $serviceName',
     "StartMode -ne 'Auto'",
-    "State -ne 'Running'"
+    "State -ne 'Running'",
+    'Get-PnpDevice -Class MEDIA -PresentOnly',
+    'Enable-PnpDevice -InstanceId $device.InstanceId'
 )) {
     if ($repairShellSource -notmatch [regex]::Escape($requiredRepairAudioText)) {
         throw "The system-tray repair is missing required audio restoration behavior: $requiredRepairAudioText"
@@ -219,20 +221,20 @@ foreach ($requiredRepairAudioText in @(
 
 $disableAudioSource = Get-Content -Raw -LiteralPath $disableAudioPath
 foreach ($requiredDisableAudioText in @(
-    "`$disabledAudioServiceName = 'Audiosrv'",
-    "`$endpointServiceName = 'AudioEndpointBuilder'",
-    'Set-Service -Name $endpointServiceName -StartupType Automatic',
-    'Start-Service -Name $endpointServiceName',
-    'Set-Service -Name $disabledAudioServiceName -StartupType Disabled',
-    'Stop-Service -Name $disabledAudioServiceName'
+    "@('AudioEndpointBuilder', 'Audiosrv')",
+    "-Name 'fDisableCam'",
+    'Set-Service -Name $serviceName -StartupType Automatic',
+    'Start-Service -Name $serviceName',
+    'Get-PnpDevice -Class MEDIA -PresentOnly',
+    'Disable-PnpDevice -InstanceId $device.InstanceId'
 )) {
     if ($disableAudioSource -notmatch [regex]::Escape($requiredDisableAudioText)) {
         throw "Disable Machine Audio is missing tray-safe behavior: $requiredDisableAudioText"
     }
 }
-if ($disableAudioSource -match [regex]::Escape("Set-Service -Name 'AudioEndpointBuilder' -StartupType Disabled") -or
-    $disableAudioSource -match [regex]::Escape("Stop-Service -Name 'AudioEndpointBuilder'")) {
-    throw 'Disable Machine Audio must not disable or stop Audio Endpoint Builder.'
+if ($disableAudioSource -match [regex]::Escape('-StartupType Disabled') -or
+    $disableAudioSource -match [regex]::Escape('Stop-Service')) {
+    throw 'Disable Machine Audio must not disable or stop the Windows audio services; the Windows 11 tray hangs without them.'
 }
 
 $usbDevicesSource = Get-Content -Raw -LiteralPath $usbDevicesPath

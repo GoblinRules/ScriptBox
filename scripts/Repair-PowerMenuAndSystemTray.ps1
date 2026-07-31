@@ -14,8 +14,9 @@
 
     Also reverses Disable Machine Audio by removing its local fDisableCam
     policy, returning Windows Audio Endpoint Builder and Windows Audio to
-    Automatic, and starting both services in dependency order. A sign-out or
-    restart reloads the affected Windows 11 shell surfaces.
+    Automatic, starting both services in dependency order, and re-enabling
+    any disabled MEDIA-class (audio) devices. A sign-out or restart reloads
+    the affected Windows 11 shell surfaces.
 #>
 
 [CmdletBinding()]
@@ -193,6 +194,21 @@ try {
         )
     }
 
+    $disabledAudioDevices = @(Get-PnpDevice -Class MEDIA -PresentOnly -ErrorAction SilentlyContinue |
+        Where-Object { $_.Problem -eq 'CM_PROB_DISABLED' })
+    if ($disabledAudioDevices.Count -eq 0) {
+        Write-Log INFO 'No disabled audio devices were found.'
+    }
+    foreach ($device in $disabledAudioDevices) {
+        try {
+            Enable-PnpDevice -InstanceId $device.InstanceId -Confirm:$false -ErrorAction Stop
+            Write-Log INFO "Audio device re-enabled: $($device.FriendlyName)"
+        }
+        catch {
+            Write-Log WARNING "Could not re-enable audio device '$($device.FriendlyName)': $($_.Exception.Message)"
+        }
+    }
+
     $failedAudioServices = @($audioServiceNames | Where-Object {
         $service = Get-CimInstance -ClassName Win32_Service -Filter "Name='$_'"
         -not $service -or $service.StartMode -ne 'Auto' -or $service.State -ne 'Running'
@@ -208,7 +224,7 @@ try {
         throw 'The audio restoration check failed. Both audio services must be Automatic/Running and fDisableCam must be absent.'
     }
 
-    Write-Log SUCCESS 'Legacy ScriptBox power/shell policy changes were removed and machine audio was restored.'
+    Write-Log SUCCESS 'Legacy ScriptBox power/shell policy changes were removed, audio devices were re-enabled, and machine audio services were restored.'
     Write-Log WARNING 'Sign out or restart Windows to reload the Start menu, power menu, notification area, and Quick Settings.'
     return
 }
