@@ -128,6 +128,8 @@ $WorkflowState = [pscustomobject]@{
     Report         = New-Object System.Collections.Generic.List[string]
     HadWarnings    = $false
     HpBiosSettings = @()
+    Completed      = $false
+    MacCopied      = $false
 }
 $FatalError = $false
 $FatalException = $null
@@ -141,7 +143,6 @@ function Add-ReportLine {
     )
 
     [void]$WorkflowState.Report.Add($Text)
-    Write-Host $Text
 }
 
 function Add-Section {
@@ -346,7 +347,7 @@ try {
 
     Add-Section 'WIRED ETHERNET ADAPTERS'
     $WiredAdapters = @(
-        Get-NetAdapter -Physical |
+        Get-NetAdapter -IncludeHidden -ErrorAction Stop |
             Where-Object {
                 $adapterText = "$($_.Name) $($_.InterfaceDescription)"
                 $_.HardwareInterface -and
@@ -359,7 +360,7 @@ try {
 
     if ($WiredAdapters.Count -eq 0) {
         Add-ReportLine '[FAILED] No physical wired Ethernet adapter was found.'
-        $WorkflowState.HadWarnings = $true
+        throw 'No physical wired Ethernet adapter was found. If this workflow has just enabled the embedded LAN controller in BIOS, restart the PC and run it again.'
     }
 
     foreach ($adapter in $WiredAdapters) {
@@ -513,6 +514,9 @@ try {
                 ifIndex |
             Select-Object -First 1
         $MacForWol = ConvertTo-ColonMac -MacAddress $PrimaryAdapter.MacAddress
+        if ([string]::IsNullOrWhiteSpace($MacForWol)) {
+            throw "The selected wired adapter '$($PrimaryAdapter.InterfaceDescription)' did not report a usable MAC address. Restart the PC once, then run this workflow again."
+        }
 
         Add-Section 'WAKE-ON-LAN MAC ADDRESS'
         Add-ReportLine 'Use this MAC address in JetKVM:'
@@ -523,6 +527,7 @@ try {
         Add-ReportLine "Adapter status  : $($PrimaryAdapter.Status)"
         try {
             Set-Clipboard -Value $MacForWol -ErrorAction Stop
+            $WorkflowState.MacCopied = $true
             Add-ReportLine 'The MAC address was copied to the clipboard.'
         }
         catch {
@@ -602,6 +607,7 @@ try {
         Add-ReportLine 'Completed successfully.'
     }
     Add-ReportLine 'Restart the PC once before performing the final shutdown/WOL test.'
+    $WorkflowState.Completed = $true
 }
 catch {
     $FatalError = $true
@@ -611,6 +617,18 @@ catch {
     Add-ReportLine ([string]$_.ScriptStackTrace)
 }
 finally {
+    if (-not $WorkflowState.Completed -and -not $FatalError) {
+        $FatalError = $true
+        $FatalException = New-Object System.InvalidOperationException(
+            'The workflow ended before reaching its completion checks. No successful result has been reported.'
+        )
+        [void]$WorkflowState.Report.Add('')
+        [void]$WorkflowState.Report.Add(('=' * 78))
+        [void]$WorkflowState.Report.Add('FATAL ERROR')
+        [void]$WorkflowState.Report.Add(('=' * 78))
+        [void]$WorkflowState.Report.Add($FatalException.Message)
+    }
+
     try {
         [IO.File]::WriteAllLines(
             $ReportPath,
@@ -664,9 +682,15 @@ finally {
             -Icon Warning
     }
     else {
+        $ClipboardText = if ($WorkflowState.MacCopied) {
+            'The MAC address has been copied to the clipboard.'
+        }
+        else {
+            'The MAC address could not be copied; use the value shown above.'
+        }
         Show-ResultPopup `
             -Title 'HP WOL/KVM setup complete' `
-            -Message "Wake-on-LAN MAC:`r`n$MacForWol`r`n`r`nThe MAC address has been copied to the clipboard.`r`n`r`nRestart the PC once before testing WOL from shutdown.`r`n`r`nReport:`r`n$DisplayedReportPath" `
+            -Message "Wake-on-LAN MAC:`r`n$MacForWol`r`n`r`n$ClipboardText`r`n`r`nRestart the PC once before testing WOL from shutdown.`r`n`r`nReport:`r`n$DisplayedReportPath" `
             -Icon Information
     }
 }

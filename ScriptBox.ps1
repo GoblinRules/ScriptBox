@@ -11,7 +11,7 @@ Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 
 $script:AppName = 'ScriptBox'
-$script:Version = '2.2.2'
+$script:Version = '2.2.3'
 $script:Repository = 'https://github.com/GoblinRules/ScriptBox'
 $script:SelfSource = 'https://raw.githubusercontent.com/GoblinRules/ScriptBox/main/ScriptBox.ps1'
 $script:IconSource = 'https://raw.githubusercontent.com/GoblinRules/ScriptBox/main/assets/icon.png'
@@ -72,6 +72,29 @@ function Remove-ScriptBoxTempRoot {
 function ConvertTo-EncodedPowerShellCommand {
     param([Parameter(Mandatory)][string]$Text)
     return [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($Text))
+}
+
+function Read-SharedTextFile {
+    param([Parameter(Mandatory)][string]$Path)
+
+    $stream = [IO.File]::Open(
+        $Path,
+        [IO.FileMode]::Open,
+        [IO.FileAccess]::Read,
+        [IO.FileShare]::ReadWrite
+    )
+    try {
+        $reader = New-Object IO.StreamReader($stream)
+        try {
+            return $reader.ReadToEnd()
+        }
+        finally {
+            $reader.Dispose()
+        }
+    }
+    finally {
+        $stream.Dispose()
+    }
 }
 
 function New-CatalogItem {
@@ -978,7 +1001,16 @@ function Write-TaskLog {
     $rendered = ($Value | Out-String -Width 240).TrimEnd()
     if ([string]::IsNullOrWhiteSpace($rendered)) { return }
     $line = '[{0}] {1}{2}' -f (Get-Date -Format 'HH:mm:ss'), $rendered, [Environment]::NewLine
-    [IO.File]::AppendAllText($logPath, $line, (New-Object Text.UTF8Encoding($false)))
+    for ($attempt = 1; $attempt -le 8; $attempt++) {
+        try {
+            [IO.File]::AppendAllText($logPath, $line, (New-Object Text.UTF8Encoding($false)))
+            return
+        }
+        catch [IO.IOException] {
+            if ($attempt -eq 8) { throw }
+            Start-Sleep -Milliseconds (25 * $attempt)
+        }
+    }
 }
 $exitCode = 0
 try {
@@ -1313,7 +1345,7 @@ $script:OutputTimer.Add_Tick({
     if (-not $script:RunState) { return }
     try {
         if (Test-Path -LiteralPath $script:RunState.LogPath) {
-            $content = [IO.File]::ReadAllText($script:RunState.LogPath, [Text.Encoding]::UTF8)
+            $content = Read-SharedTextFile -Path $script:RunState.LogPath
             if ($content.Length -gt $script:RunState.ReadLength) {
                 $newText = $content.Substring($script:RunState.ReadLength)
                 $script:TerminalOutput.AppendText($newText)
@@ -1334,7 +1366,7 @@ $script:OutputTimer.Add_Tick({
             $finishedState = $script:RunState
             $finishedName = $finishedState.Item.Name
             $fullOutput = if (Test-Path -LiteralPath $finishedState.LogPath) {
-                [IO.File]::ReadAllText($finishedState.LogPath, [Text.Encoding]::UTF8)
+                Read-SharedTextFile -Path $finishedState.LogPath
             } else { '' }
             $result = New-FriendlyResult -Item $finishedState.Item -ExitCode ([int]$exitCode) -Output $fullOutput
             Remove-Item -LiteralPath $finishedState.LogPath, $finishedState.DonePath -Force -ErrorAction SilentlyContinue

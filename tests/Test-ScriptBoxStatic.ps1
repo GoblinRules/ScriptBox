@@ -88,6 +88,58 @@ if ($launcherSource -notmatch "-RequiredInputValue 'ERASE ALL INTERNAL DATA'") {
     throw 'The erase workflow must validate its exact confirmation phrase inside the launcher.'
 }
 
+$launcherTokens = $null
+$launcherErrors = $null
+$launcherAst = [System.Management.Automation.Language.Parser]::ParseFile(
+    $launcherPath,
+    [ref]$launcherTokens,
+    [ref]$launcherErrors
+)
+$runnerAssignment = $launcherAst.FindAll({
+    param($node)
+    $node -is [System.Management.Automation.Language.AssignmentStatementAst] -and
+    $node.Left -is [System.Management.Automation.Language.VariableExpressionAst] -and
+    $node.Left.VariablePath.UserPath -eq 'runnerTemplate'
+}, $true) | Select-Object -First 1
+if ($null -eq $runnerAssignment) {
+    throw 'Could not find the launcher runnerTemplate payload.'
+}
+$runnerExpression = $runnerAssignment.Right
+if ($runnerExpression -is [System.Management.Automation.Language.CommandExpressionAst]) {
+    $runnerExpression = $runnerExpression.Expression
+}
+if ($runnerExpression -isnot [System.Management.Automation.Language.StringConstantExpressionAst]) {
+    throw 'The launcher runnerTemplate is not a literal string payload.'
+}
+$resolvedRunner = [string]$runnerExpression.Value
+$resolvedRunner = $resolvedRunner.Replace(
+    '__LOG_PATH__',
+    'C:\Windows\Temp\ScriptBox-Runner-StaticValidation.log'
+)
+$resolvedRunner = $resolvedRunner.Replace('__TASK_NAME__', 'Static validation')
+$resolvedRunner = $resolvedRunner.Replace('__PAYLOAD__', "Write-Output 'payload'")
+$runnerTokens = $null
+$runnerErrors = $null
+[void][System.Management.Automation.Language.Parser]::ParseInput(
+    $resolvedRunner,
+    [ref]$runnerTokens,
+    [ref]$runnerErrors
+)
+if ($runnerErrors.Count -gt 0) {
+    throw "The launcher runnerTemplate does not parse: $($runnerErrors.Message -join '; ')"
+}
+
+foreach ($requiredSharedLogText in @(
+    'function Read-SharedTextFile',
+    '[IO.FileShare]::ReadWrite',
+    'catch [IO.IOException]',
+    '$attempt -le 8'
+)) {
+    if ($launcherSource -notmatch [regex]::Escape($requiredSharedLogText)) {
+        throw "The launcher is missing shared-log protection: $requiredSharedLogText"
+    }
+}
+
 $hideShutdownSource = Get-Content -Raw -LiteralPath $hideShutdownPath
 if ($hideShutdownSource -match 'PolicyManager\\default') {
     throw 'Hide Shutdown Options must not modify the Windows PolicyManager default store.'
@@ -141,6 +193,10 @@ foreach ($requiredHpG3G5Text in @(
     'ConvertTo-ColonMac',
     '$WorkflowState.Report',
     '$WorkflowState.HadWarnings',
+    '$WorkflowState.Completed',
+    '$WorkflowState.MacCopied',
+    'Get-NetAdapter -IncludeHidden',
+    'No physical wired Ethernet adapter was found',
     'Error:`r`n{0}'
 )) {
     if ($hpG3G5WolKvmSource -notmatch [regex]::Escape($requiredHpG3G5Text)) {
@@ -180,4 +236,4 @@ if (-not [Collections.IEnumerable].IsAssignableFrom($methodCollectionType)) {
     throw 'CimClassMethods is not enumerable on this Windows PowerShell runtime.'
 }
 
-Write-Host "[PASS] Parsed $($files.Count) PowerShell files and both embedded payloads without executing them."
+Write-Host "[PASS] Parsed $($files.Count) PowerShell files, the launcher runner, and both embedded payloads without executing them."
