@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    Installs or updates 7-Zip, Google Chrome, Mozilla Firefox, and Notepad++
+    Installs or updates 7-Zip, Google Chrome, and Mozilla Firefox
     using the official Ninite bundle.
 
 .DESCRIPTION
@@ -77,13 +77,6 @@ try {
                 'C:\Program Files\Mozilla Firefox\firefox.exe',
                 'C:\Program Files (x86)\Mozilla Firefox\firefox.exe'
             )
-        },
-        @{
-            Name = 'Notepad++'
-            Paths = @(
-                'C:\Program Files\Notepad++\notepad++.exe',
-                'C:\Program Files (x86)\Notepad++\notepad++.exe'
-            )
         }
     )
 
@@ -92,7 +85,7 @@ try {
         Write-Log INFO "$($application.Name): $state."
     }
 
-    $downloadUrl = 'https://ninite.com/7zip-chrome-firefox-notepadplusplus/ninite.exe'
+    $downloadUrl = 'https://ninite.com/7zip-chrome-firefox/ninite.exe'
     $installerPath = Join-Path $env:TEMP "ScriptBox-Ninite-$([Guid]::NewGuid().ToString('N')).exe"
 
     try {
@@ -135,7 +128,7 @@ try {
         throw "One or more applications were not detected: $($missing -join ', ')."
     }
 
-    Write-Log SUCCESS '7-Zip, Chrome, Firefox, and Notepad++ were installed or updated successfully.'
+    Write-Log SUCCESS '7-Zip, Chrome, and Firefox were installed or updated successfully.'
     return
 }
 catch {

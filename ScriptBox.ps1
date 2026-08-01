@@ -11,7 +11,7 @@ Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 
 $script:AppName = 'ScriptBox'
-$script:Version = '3.3.3'
+$script:Version = '3.3.4'
 $script:Repository = 'https://github.com/GoblinRules/ScriptBox'
 $script:SelfSource = 'https://raw.githubusercontent.com/GoblinRules/ScriptBox/main/ScriptBox.ps1'
 $script:IconSource = 'https://raw.githubusercontent.com/GoblinRules/ScriptBox/main/assets/icon.png'
@@ -222,7 +222,7 @@ $script:Catalog = @(
     New-CatalogItem -Id 'enable-rdp-current-user' -Name 'Enable Remote Desktop' -Category 'Remote Access' -Description 'Enables Remote Desktop for this PC with NLA and permits the interactively signed-in user.' -ScriptPath 'Enable-RDPForCurrentUser.ps1' -Impact 'Enables the machine-level Remote Desktop setting and policy, starts Remote Desktop Services, opens inbound TCP/UDP 3389 firewall rules, and changes local group membership.' -RequiresAdmin $true -Accent '#22D3EE' -SuccessMessage 'Remote Desktop was enabled for this PC, with NLA, firewall access, and user membership configured successfully.'
     New-CatalogItem -Id 'windows-update-security' -Name 'Security-Focused Updates' -Category 'Windows Update' -Description 'Keeps monthly updates automatic while blocking previews and deferring feature upgrades.' -ScriptPath 'Configure-WindowsUpdateSecurityFocused.ps1' -Impact 'Changes Windows Update policy, excludes drivers, defers feature upgrades for 365 days, and starts an update scan.' -RequiresAdmin $true -ConflictGroup 'windows-update-mode' -Accent '#34D399' -SuccessMessage 'Windows Update now prioritizes monthly quality updates without optional previews or drivers.'
     New-CatalogItem -Id 'windows-update-manual' -Name 'Manual Updates Only' -Category 'Windows Update' -Description 'Stops automatic update downloads and installations while keeping manual checking available.' -ScriptPath 'Configure-WindowsUpdateManual.ps1' -Impact 'Removes conflicting update policy and disables automatic Windows Update downloads and installation.' -RequiresAdmin $true -ConflictGroup 'windows-update-mode' -Accent '#F59E0B' -SuccessMessage 'Windows Update is now manual only; someone must regularly check and install security updates.'
-    New-CatalogItem -Id 'install-ninite-apps' -Name 'Install Core Apps' -Category 'Software' -Description 'Installs or updates 7-Zip, Chrome, Firefox, and Notepad++ through Ninite.' -ScriptPath 'Install-NiniteApps.ps1' -Impact 'Downloads a signed Ninite executable, runs it unattended, installs or updates four applications, then removes the installer.' -RequiresAdmin $true -Accent '#34D399' -SuccessMessage '7-Zip, Chrome, Firefox, and Notepad++ were installed or updated.'
+    New-CatalogItem -Id 'install-ninite-apps' -Name 'Install Core Apps' -Category 'Software' -Description 'Installs or updates 7-Zip, Chrome, and Firefox through Ninite.' -ScriptPath 'Install-NiniteApps.ps1' -Impact 'Downloads a signed Ninite executable, runs it unattended, installs or updates three applications, then removes the installer.' -RequiresAdmin $true -Accent '#34D399' -SuccessMessage '7-Zip, Chrome, and Firefox were installed or updated.'
     New-CatalogItem -Id 'deploy-laptop-lid-check' -Name 'Deploy Laptop Lid Check' -Category 'Utilities' -Description 'Adds a Public Desktop shortcut that shows the current laptop-lid state in a friendly popup.' -ScriptPath 'Deploy-LaptopLidCheck.ps1' -Impact 'Creates C:\ProgramData\LaptopLidCheck and C:\Users\Public\Desktop\Folder.lnk for all users.' -RequiresAdmin $true -Accent '#C084FC' -SuccessMessage 'The matching Laptop Lid Check popup and Public Desktop shortcut were installed.'
     New-CatalogItem -Id 'show-connected-usb-devices' -Name 'View Connected USB Devices' -Category 'Utilities' -Description 'Shows present USB Plug and Play devices, locations, and USB paths in a formatted table popup.' -ScriptPath 'Show-ConnectedUSBDevices.ps1' -Impact 'Performs a read-only PnP device query and opens a sortable popup. It makes no system changes.' -CanQueue $false -ResultMode 'None' -Accent '#22D3EE' -SuccessMessage 'The connected USB device table was displayed.'
     New-CatalogItem -Id 'launch-jetfuel' -Name 'Launch JetFuel' -Category 'Tools' -Description 'Downloads and runs the current JetFuel launcher.' -SourceUri 'https://tails.revhooks.cc' -Impact 'Executes remote PowerShell from tails.revhooks.cc. Review the source you trust before running it.' -RequiresAdmin $true -NeedsBypass $true -ResultMode 'None' -Accent '#22D3EE'
@@ -276,8 +276,8 @@ $script:ApplicationLinks = @(
     [pscustomobject]@{ Id='mumu'; Name='MuMu Player'; Description='Android emulator for Windows.'; Tags=@('UTILITY'); Uri='https://www.mumuplayer.com/'; LinkLabel='Website'; Accent='#FB7185'; Actions=@(
         [pscustomobject]@{ Text='Download & Install'; Type='Exe'; Uri='https://a11.gdl.netease.com/MuMu_5.0.2_gw-overseas12_all_1754534682.exe?n=MuMu_5.0.2_lMBe7ZC.exe'; FileName='MuMu_Player_Setup.exe'; RequiresAdmin=$true; Impact='Downloads the MuMu Player installer and starts it with administrator rights.' }
     ) }
-    [pscustomobject]@{ Id='ninite'; Name='Ninite Installer'; Description='Essential apps bundle: 7-Zip, Chrome, Firefox, and Notepad++.'; Tags=@('UTILITY','BROWSER'); Uri='https://ninite.com/'; LinkLabel='Website'; Accent='#4ADE80'; Actions=@(
-        [pscustomobject]@{ Text='Download & Install'; Type='Exe'; Uri='https://ninite.com/7zip-chrome-firefox-notepadplusplus/ninite.exe'; FileName='Ninite_Core_Apps.exe'; RequiresAdmin=$true; Impact='Downloads the Ninite bundle and installs or updates 7-Zip, Chrome, Firefox, and Notepad++.' }
+    [pscustomobject]@{ Id='ninite'; Name='Ninite Installer'; Description='Essential apps bundle: 7-Zip, Chrome, and Firefox.'; Tags=@('UTILITY','BROWSER'); Uri='https://ninite.com/'; LinkLabel='Website'; Accent='#4ADE80'; Actions=@(
+        [pscustomobject]@{ Text='Download & Install'; Type='Exe'; Uri='https://ninite.com/7zip-chrome-firefox/ninite.exe'; FileName='Ninite_Core_Apps.exe'; RequiresAdmin=$true; Impact='Downloads the Ninite bundle and installs or updates 7-Zip, Chrome, and Firefox.' }
     ) }
 )
 
@@ -422,6 +422,9 @@ $windowXaml = @'
                 <TextBox x:Name="SearchBox" Height="42" Padding="38,11,13,8" FontSize="13" VerticalContentAlignment="Center"/>
             </Grid>
             <StackPanel x:Name="BatchPanel" Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="12,0,0,0">
+                <Button x:Name="NewInstallButton" Content="NEW INSTALL" Height="42" Padding="14,7" Margin="0,0,8,0" Foreground="White" BorderThickness="0">
+                    <Button.Background><LinearGradientBrush StartPoint="0,0" EndPoint="1,1"><GradientStop Color="#22C55E" Offset="0"/><GradientStop Color="#16A34A" Offset="1"/></LinearGradientBrush></Button.Background>
+                </Button>
                 <Button x:Name="ClearSelectionButton" Content="CLEAR" Height="42" Padding="12,7" Margin="0,0,8,0"
                         Background="{DynamicResource ControlBackground}" BorderBrush="{DynamicResource ThemeBorder}" Foreground="{DynamicResource SecondaryText}"/>
                 <Button x:Name="RunSelectedButton" Content="RUN SELECTED (0)" Height="42" Padding="14,7"
@@ -505,6 +508,7 @@ $script:ExpandTerminalButton = $script:Window.FindName('ExpandTerminalButton')
 $script:CollapseTerminalButton = $script:Window.FindName('CollapseTerminalButton')
 $script:RunSelectedButton = $script:Window.FindName('RunSelectedButton')
 $script:ClearSelectionButton = $script:Window.FindName('ClearSelectionButton')
+$script:NewInstallButton = $script:Window.FindName('NewInstallButton')
 $script:ThemeToggleButton = $script:Window.FindName('ThemeToggleButton')
 $script:ElevateButton = $script:Window.FindName('ElevateButton')
 $script:ControlPanelButton = $script:Window.FindName('ControlPanelButton')
@@ -1428,8 +1432,7 @@ function Get-ApplicationStatus {
                 $missing = @(
                     'C:\Program Files\7-Zip\7z.exe',
                     'C:\Program Files\Google\Chrome\Application\chrome.exe',
-                    'C:\Program Files\Mozilla Firefox\firefox.exe',
-                    'C:\Program Files\Notepad++\notepad++.exe'
+                    'C:\Program Files\Mozilla Firefox\firefox.exe'
                 ) | Where-Object { -not (Test-Path -LiteralPath $_) }
                 $installed = @($missing).Count -eq 0
             }
@@ -2462,6 +2465,71 @@ function Start-SelectedItems {
     Start-NextQueuedItem
 }
 
+# One-click preparation preset for a freshly installed computer. The ids must
+# match existing catalog entries; the order below is the exact run order.
+$script:NewInstallPresetIds = @(
+    'always-on-power'
+    'keep-network-active'
+    'hide-shutdown-options'
+    'idle-lock-10-minutes'
+    'allow-password-signin'
+    'enable-location-services'
+    'disable-ipv6'
+    'disable-machine-audio'
+    'enable-rdp-current-user'
+    'windows-update-security'
+    'install-ninite-apps'
+    'deploy-laptop-lid-check'
+)
+
+function Start-NewInstallPreset {
+    if ($script:RunState -or $script:IsQueueRunning) {
+        Show-ScriptBoxDialog -Title 'New Install' `
+            -Message 'Another task is still running. Wait for the current task or queue to finish, then choose NEW INSTALL again.' `
+            -Buttons OK -Kind Info | Out-Null
+        return
+    }
+
+    if (-not $script:IsAdministrator) {
+        $elevate = Show-ScriptBoxDialog -Title 'Administrator recommended' `
+            -Message 'New Install runs mostly administrator tasks, so a standard session shows a separate elevation prompt for each one. Restart ScriptBox as administrator now so elevation is approved once instead?' `
+            -Buttons YesNo -Kind Info
+        if ($elevate) {
+            Restart-ScriptBoxAsAdministrator
+            return
+        }
+    }
+
+    $items = New-Object System.Collections.Generic.List[object]
+    foreach ($presetId in $script:NewInstallPresetIds) {
+        $presetItem = @($script:Catalog | Where-Object Id -eq $presetId)
+        if ($presetItem.Count -ne 1) {
+            Show-ScriptBoxDialog -Title 'New Install' `
+                -Message "The New Install preset refers to a missing catalog item: $presetId." `
+                -Buttons OK -Kind Warning | Out-Null
+            return
+        }
+        $items.Add($presetItem[0])
+    }
+
+    $names = @($items | ForEach-Object { "$([char]0x2022) " + $_.Name }) -join [Environment]::NewLine
+    $message = "New Install prepares this computer by running these tasks one after another:`n`n$names`n`nThis changes system settings on this computer. Tasks that need administrator rights may show a UAC prompt."
+    if (-not (Show-ScriptBoxDialog -Title 'New Install' -Message $message -Buttons YesNo -Kind Warning)) {
+        Add-TerminalLine 'New Install preset cancelled.'
+        return
+    }
+
+    $script:RunQueue.Clear()
+    $script:QueueResults.Clear()
+    foreach ($item in $items) { $script:RunQueue.Enqueue($item) }
+    $script:QueueTitle = 'New Install'
+    $script:QueueNoun = 'New Install tasks'
+    $script:IsQueueRunning = $true
+    Set-RunButtonsEnabled -Enabled $false
+    Add-TerminalLine "Queued $($items.Count) New Install tasks for sequential execution."
+    Start-NextQueuedItem
+}
+
 function Start-NextQueuedItem {
     if (-not $script:IsQueueRunning -or $script:RunState) { return }
 
@@ -2549,6 +2617,7 @@ function Select-Section {
     $hasBatchControls = $Section -in @('Applications', 'Scripts')
     $canSearch = $Section -in @('Applications', 'Scripts')
     $script:ScriptTabsPanel.Visibility = if ($isScripts) { 'Visible' } else { 'Collapsed' }
+    $script:NewInstallButton.Visibility = if ($isScripts) { 'Visible' } else { 'Collapsed' }
     $script:RunSelectedButton.Visibility = if ($hasBatchControls) { 'Visible' } else { 'Collapsed' }
     $script:ClearSelectionButton.Visibility = if ($hasBatchControls) { 'Visible' } else { 'Collapsed' }
     $script:SearchPanel.Visibility = if ($canSearch) { 'Visible' } else { 'Collapsed' }
@@ -2640,6 +2709,7 @@ $script:SearchBox.Add_TextChanged({
 $script:RunSelectedButton.Add_Click({
     if ($script:ActiveSection -eq 'Applications') { Start-SelectedApplications } else { Start-SelectedItems }
 })
+$script:NewInstallButton.Add_Click({ Start-NewInstallPreset })
 $script:ClearSelectionButton.Add_Click({
     if ($script:ActiveSection -eq 'Applications') { Clear-SelectedApplications } else { Clear-SelectedItems }
 })
@@ -2881,6 +2951,7 @@ if ($env:SCRIPTBOX_TEST_MODE -eq '1') {
         $script:CardsHost.Children.Count -ne $script:ApplicationLinks.Count -or
         $script:ScriptTabsPanel.Visibility -ne 'Collapsed' -or
         $script:RunSelectedButton.Visibility -ne 'Visible' -or
+        $script:NewInstallButton.Visibility -ne 'Collapsed' -or
         $script:SearchPanel.Visibility -ne 'Visible' -or
         $script:ApplicationSelectionControls.Count -ne $script:ApplicationLinks.Count -or
         $script:RunButtons.Count -ne 15) {
@@ -2924,8 +2995,19 @@ if ($env:SCRIPTBOX_TEST_MODE -eq '1') {
     Select-Section -Section 'Scripts'
     if ($script:ActiveSection -ne 'Scripts' -or
         $script:ScriptTabsPanel.Visibility -ne 'Visible' -or
-        $script:RunSelectedButton.Visibility -ne 'Visible') {
+        $script:RunSelectedButton.Visibility -ne 'Visible' -or
+        $script:NewInstallButton.Visibility -ne 'Visible') {
         throw 'Scripts section and top-tab validation failed.'
+    }
+    # Validate only the lookup side of the New Install preset; the queue itself
+    # is never started here because its tasks change real system state.
+    if ($script:NewInstallPresetIds.Count -ne 12) {
+        throw 'New Install preset must list exactly 12 catalog tasks.'
+    }
+    foreach ($presetId in $script:NewInstallPresetIds) {
+        if (@($script:Catalog | Where-Object Id -eq $presetId).Count -ne 1) {
+            throw "New Install preset id does not resolve to one catalog item: $presetId"
+        }
     }
     Set-ScriptBoxTheme -Theme 'Light'
     if ($script:IsDarkTheme -or $script:ThemeToggleButton.Content -ne 'DARK') {
