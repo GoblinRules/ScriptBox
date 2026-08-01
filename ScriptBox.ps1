@@ -11,7 +11,7 @@ Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 
 $script:AppName = 'ScriptBox'
-$script:Version = '3.3.5'
+$script:Version = '3.3.6'
 $script:Repository = 'https://github.com/GoblinRules/ScriptBox'
 $script:SelfSource = 'https://raw.githubusercontent.com/GoblinRules/ScriptBox/main/ScriptBox.ps1'
 $script:IconSource = 'https://raw.githubusercontent.com/GoblinRules/ScriptBox/main/assets/icon.png'
@@ -2062,7 +2062,7 @@ function Render-Diagnostics {
     $script:ApplicationSelectionControls.Clear()
     $diagnosticCard = New-FeatureCard -Title 'Network Diagnostics' `
         -Description 'Read-only gateway, internet, DNS, TCP, and HTTPS checks. Detailed KVM and Wake-on-LAN diagnostics are on the cards below.' `
-        -Accent '#38BDF8' -Width 820 -MinHeight 300
+        -Accent '#38BDF8' -Width 940 -MinHeight 300
     $checklist = New-Object Windows.Controls.TextBlock
     $checklist.Text = "$([char]0x2022) Active adapters and default gateway`n$([char]0x2022) Gateway and public ICMP reachability`n$([char]0x2022) DNS resolution`n$([char]0x2022) TCP 443 connectivity`n$([char]0x2022) HTTPS connectivity"
     $checklist.FontSize = 13
