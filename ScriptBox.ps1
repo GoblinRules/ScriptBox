@@ -11,7 +11,7 @@ Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 
 $script:AppName = 'ScriptBox'
-$script:Version = '3.3.4'
+$script:Version = '3.3.5'
 $script:Repository = 'https://github.com/GoblinRules/ScriptBox'
 $script:SelfSource = 'https://raw.githubusercontent.com/GoblinRules/ScriptBox/main/ScriptBox.ps1'
 $script:IconSource = 'https://raw.githubusercontent.com/GoblinRules/ScriptBox/main/assets/icon.png'
@@ -2061,7 +2061,7 @@ function Render-Diagnostics {
     $script:SelectionControls.Clear()
     $script:ApplicationSelectionControls.Clear()
     $diagnosticCard = New-FeatureCard -Title 'Network Diagnostics' `
-        -Description 'Read-only gateway, internet, DNS, TCP, and HTTPS checks. Detailed KVM diagnostics remain available in Scripts.' `
+        -Description 'Read-only gateway, internet, DNS, TCP, and HTTPS checks. Detailed KVM and Wake-on-LAN diagnostics are on the cards below.' `
         -Accent '#38BDF8' -Width 820 -MinHeight 300
     $checklist = New-Object Windows.Controls.TextBlock
     $checklist.Text = "$([char]0x2022) Active adapters and default gateway`n$([char]0x2022) Gateway and public ICMP reachability`n$([char]0x2022) DNS resolution`n$([char]0x2022) TCP 443 connectivity`n$([char]0x2022) HTTPS connectivity"
@@ -2103,7 +2103,14 @@ catch { Write-Host "HTTPS microsoft.com: FAIL ($($_.Exception.Message))" }
     }.GetNewClosure())
     $diagnosticCard.Body.Children.Add($runButton) | Out-Null
     $script:CardsHost.Children.Add($diagnosticCard.Border) | Out-Null
+    # Diagnostics-category catalog cards render here instead of in Scripts.
+    # RUN SELECTED is never visible in this section, so the SELECT checkbox
+    # is omitted; every other card behavior matches the Scripts section.
+    foreach ($item in @($script:Catalog | Where-Object Category -eq 'Diagnostics')) {
+        $script:CardsHost.Children.Add((New-Card -Item $item -HideSelection)) | Out-Null
+    }
     $script:ResultsLabel.Text = 'One-click read-only network health checks with live terminal output.'
+    if ($script:RunState -or $script:IsQueueRunning) { Set-RunButtonsEnabled -Enabled $false }
 }
 
 function Get-SystemInfoSnapshot {
@@ -2278,7 +2285,7 @@ function Restart-ScriptBoxAsAdministrator {
 }
 
 function New-Card {
-    param([Parameter(Mandatory)]$Item)
+    param([Parameter(Mandatory)]$Item, [switch]$HideSelection)
 
     $border = New-Object Windows.Controls.Border
     $border.Width = 304
@@ -2327,24 +2334,27 @@ function New-Card {
     $badges = New-Object Windows.Controls.StackPanel
     $badges.Orientation = 'Horizontal'
     $badges.VerticalAlignment = 'Center'
-    $selectBox = New-Object Windows.Controls.CheckBox
-    $selectBox.Content = 'SELECT'
-    $selectBox.FontSize = 9
-    $selectBox.FontWeight = 'Bold'
-    $selectBox.Foreground = $script:Window.Resources['SecondaryText']
-    $selectBox.Margin = '0,0,10,0'
-    $selectBox.VerticalAlignment = 'Center'
-    $selectBox.IsChecked = $script:SelectedIds.Contains($Item.Id)
-    $setCatalogItemSelected = ${function:Set-CatalogItemSelected}
     $showScriptInfo = ${function:Show-ScriptInfo}
     $startCatalogItem = ${function:Start-CatalogItem}
-    $selectBox.Add_Checked({
-        & $setCatalogItemSelected -Id $Item.Id -Selected $true
-    }.GetNewClosure())
-    $selectBox.Add_Unchecked({
-        & $setCatalogItemSelected -Id $Item.Id -Selected $false
-    }.GetNewClosure())
-    if ($Item.CanQueue) { $script:SelectionControls.Add($selectBox) }
+    $selectBox = $null
+    if (-not $HideSelection) {
+        $selectBox = New-Object Windows.Controls.CheckBox
+        $selectBox.Content = 'SELECT'
+        $selectBox.FontSize = 9
+        $selectBox.FontWeight = 'Bold'
+        $selectBox.Foreground = $script:Window.Resources['SecondaryText']
+        $selectBox.Margin = '0,0,10,0'
+        $selectBox.VerticalAlignment = 'Center'
+        $selectBox.IsChecked = $script:SelectedIds.Contains($Item.Id)
+        $setCatalogItemSelected = ${function:Set-CatalogItemSelected}
+        $selectBox.Add_Checked({
+            & $setCatalogItemSelected -Id $Item.Id -Selected $true
+        }.GetNewClosure())
+        $selectBox.Add_Unchecked({
+            & $setCatalogItemSelected -Id $Item.Id -Selected $false
+        }.GetNewClosure())
+        if ($Item.CanQueue) { $script:SelectionControls.Add($selectBox) }
+    }
     $badgeParts = @()
     if ($Item.RequiresAdmin) { $badgeParts += 'ADMIN' }
     if ($Item.NeedsBypass) { $badgeParts += 'BYPASS' }
@@ -2356,7 +2366,7 @@ function New-Card {
     $badge.FontSize = 9
     $badge.FontWeight = 'Bold'
     $badge.Foreground = if ($Item.RequiresAdmin) { '#F59E0B' } else { '#22C55E' }
-    if ($Item.CanQueue) { $badges.Children.Add($selectBox) | Out-Null }
+    if ($Item.CanQueue -and -not $HideSelection) { $badges.Children.Add($selectBox) | Out-Null }
     $badges.Children.Add($badge) | Out-Null
     [Windows.Controls.Grid]::SetColumn($badges, 0)
 
@@ -2404,6 +2414,8 @@ function Render-Cards {
     $script:ApplicationSelectionControls.Clear()
     $query = $script:SearchBox.Text.Trim()
     $filtered = @($script:Catalog | Where-Object {
+        # Diagnostics-category cards render in the Diagnostics section instead.
+        $_.Category -ne 'Diagnostics' -and
         (($script:ActiveCategory -eq 'All scripts' -and $_.ShowInAllScripts) -or $_.Category -eq $script:ActiveCategory) -and
         ([string]::IsNullOrWhiteSpace($query) -or
          $_.Name.IndexOf($query, [StringComparison]::OrdinalIgnoreCase) -ge 0 -or
@@ -2686,10 +2698,12 @@ foreach ($sectionName in $sections) {
     $script:SectionHost.Children.Add($sectionButton) | Out-Null
 }
 
-$categories = @('All scripts') + @($script:Catalog.Category | Sort-Object -Unique)
+# Diagnostics-category cards live in the Diagnostics section, so the Scripts
+# section shows neither a Diagnostics pill nor those cards under All scripts.
+$categories = @('All scripts') + @($script:Catalog.Category | Sort-Object -Unique | Where-Object { $_ -ne 'Diagnostics' })
 foreach ($categoryName in $categories) {
     $button = New-Object Windows.Controls.Button
-    $count = if ($categoryName -eq 'All scripts') { @($script:Catalog | Where-Object ShowInAllScripts).Count } else { @($script:Catalog | Where-Object Category -eq $categoryName).Count }
+    $count = if ($categoryName -eq 'All scripts') { @($script:Catalog | Where-Object { $_.ShowInAllScripts -and $_.Category -ne 'Diagnostics' }).Count } else { @($script:Catalog | Where-Object Category -eq $categoryName).Count }
     $button.Content = "$categoryName   $count"
     $button.Tag = $categoryName
     $button.HorizontalContentAlignment = 'Center'
@@ -2985,6 +2999,15 @@ if ($env:SCRIPTBOX_TEST_MODE -eq '1') {
     if ($null -eq $script:TaskManagerButton -or [string]$script:TaskManagerButton.Content -notmatch 'Task Manager') {
         throw 'Task Manager sidebar shortcut validation failed.'
     }
+    Select-Section -Section 'Diagnostics'
+    if ($script:ActiveSection -ne 'Diagnostics' -or
+        $script:CardsHost.Children.Count -ne 4 -or
+        $script:RunButtons.Count -ne 3 -or
+        $script:SelectionControls.Count -ne 0 -or
+        $script:SearchPanel.Visibility -ne 'Collapsed' -or
+        $script:RunSelectedButton.Visibility -ne 'Collapsed') {
+        throw 'Diagnostics section validation failed; expected the built-in Network Diagnostics card plus the three Diagnostics-category catalog cards without selection checkboxes.'
+    }
     Select-Section -Section 'System Info'
     if ($script:ActiveSection -ne 'System Info' -or
         $script:CardsHost.Children.Count -ne 6 -or
@@ -3032,8 +3055,9 @@ if ($env:SCRIPTBOX_TEST_MODE -eq '1') {
         throw 'Warning category and destructive-action safeguards validation failed.'
     }
     $allScriptsButton = @($script:CategoryHost.Children | Where-Object Tag -eq 'All scripts')[0]
-    if ($script:CardsHost.Children.Count -ne 26 -or $allScriptsButton.Content -ne 'All scripts   26') {
-        throw 'All scripts must exclude warning-only actions.'
+    if ($script:CardsHost.Children.Count -ne 23 -or $allScriptsButton.Content -ne 'All scripts   23' -or
+        @($script:CategoryHost.Children | Where-Object Tag -eq 'Diagnostics').Count -ne 0) {
+        throw 'All scripts must exclude warning-only actions and Diagnostics-section cards.'
     }
     $fixesItems = @($script:Catalog | Where-Object Category -eq 'Fixes')
     $fixesButton = @($script:CategoryHost.Children | Where-Object Tag -eq 'Fixes')[0]
