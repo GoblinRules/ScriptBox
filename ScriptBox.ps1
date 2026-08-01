@@ -11,7 +11,7 @@ Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 
 $script:AppName = 'ScriptBox'
-$script:Version = '3.3.2'
+$script:Version = '3.3.3'
 $script:Repository = 'https://github.com/GoblinRules/ScriptBox'
 $script:SelfSource = 'https://raw.githubusercontent.com/GoblinRules/ScriptBox/main/ScriptBox.ps1'
 $script:IconSource = 'https://raw.githubusercontent.com/GoblinRules/ScriptBox/main/assets/icon.png'
@@ -41,15 +41,28 @@ $script:IsQueueRunning = $false
 $script:QueueTitle = 'Selected scripts'
 $script:QueueNoun = 'scripts'
 
-# PowerShell 7 normally starts in MTA. WPF needs an STA thread, so hand off to
-# Windows PowerShell without writing the launcher itself to disk.
-if ([Threading.Thread]::CurrentThread.ApartmentState -ne 'STA') {
-    $handoff = "& { Invoke-RestMethod -UseBasicParsing '$($script:SelfSource)' | Invoke-Expression }"
-    $encodedHandoff = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($handoff))
-    Start-Process -FilePath 'powershell.exe' -ArgumentList @(
-        '-NoLogo', '-NoProfile', '-STA', '-EncodedCommand', $encodedHandoff
-    ) -WindowStyle Hidden
-    return
+# WPF needs an STA thread, and running inline via irm | iex ties the app's
+# life to the user's console process (a UI failure would close their
+# terminal). Hand off to a dedicated hidden Windows PowerShell host whenever
+# the thread is MTA (PowerShell 7 default) or the launcher was piped through
+# Invoke-Expression, without writing the launcher itself to disk.
+$script:IsPipedLaunch = -not $PSScriptRoot
+if ([Threading.Thread]::CurrentThread.ApartmentState -ne 'STA' -or
+    ($script:IsPipedLaunch -and $env:SCRIPTBOX_HANDOFF -ne '1')) {
+    try {
+        $handoff = "& { `$env:SCRIPTBOX_HANDOFF = '1'; Invoke-RestMethod -UseBasicParsing '$($script:SelfSource)' | Invoke-Expression }"
+        $encodedHandoff = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($handoff))
+        Start-Process -FilePath 'powershell.exe' -ArgumentList @(
+            '-NoLogo', '-NoProfile', '-STA', '-EncodedCommand', $encodedHandoff
+        ) -WindowStyle Hidden -ErrorAction Stop
+        Write-Host 'ScriptBox is opening in its own window; this console is free to use or close.'
+        return
+    }
+    catch {
+        if ([Threading.Thread]::CurrentThread.ApartmentState -ne 'STA') { throw }
+        # The detached host could not start but this console is STA, so fall
+        # through and run inline as older versions did.
+    }
 }
 
 Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase, System.Xaml
@@ -465,6 +478,14 @@ $windowXaml = @'
 [xml]$xamlXml = $windowXaml
 $reader = New-Object System.Xml.XmlNodeReader($xamlXml)
 $script:Window = [Windows.Markup.XamlReader]::Load($reader)
+
+# Any unhandled dispatcher exception would otherwise terminate the host
+# process, which is the user's own console when the launcher runs inline.
+$script:Window.Dispatcher.Add_UnhandledException({
+    param($sender, $eventArgs)
+    $eventArgs.Handled = $true
+    try { Add-TerminalLine ("Unexpected UI error: " + $eventArgs.Exception.Message) } catch { }
+})
 
 $script:CardsHost = $script:Window.FindName('CardsHost')
 $script:CategoryHost = $script:Window.FindName('CategoryHost')
