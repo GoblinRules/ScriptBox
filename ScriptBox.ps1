@@ -11,7 +11,7 @@ Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 
 $script:AppName = 'ScriptBox'
-$script:Version = '3.3.6'
+$script:Version = '3.3.7'
 $script:Repository = 'https://github.com/GoblinRules/ScriptBox'
 $script:SelfSource = 'https://raw.githubusercontent.com/GoblinRules/ScriptBox/main/ScriptBox.ps1'
 $script:IconSource = 'https://raw.githubusercontent.com/GoblinRules/ScriptBox/main/assets/icon.png'
@@ -207,7 +207,6 @@ function New-CatalogItem {
 # are generated automatically from these definitions.
 # ============================================================================
 $script:Catalog = @(
-    New-CatalogItem -Id 'restart-windows' -Name 'Restart Windows' -Category 'Power' -Description 'Restarts this computer after a 10-second warning.' -ScriptPath 'Restart-Windows.ps1' -Impact 'Open work may be lost. Windows displays a 10-second countdown before restarting.' -ConflictGroup 'power-action' -RunOrder 900 -Accent '#F472B6' -SuccessMessage 'Windows accepted the restart request and started the 10-second countdown.'
     New-CatalogItem -Id 'shutdown-windows' -Name 'Shut Down Windows' -Category 'Warning - Use With Caution' -Description 'Shuts down this computer after a 30-second warning.' -ScriptPath 'Shutdown-Windows.ps1' -Impact 'Open work may be lost. Windows displays a 30-second countdown before shutting down.' -ConflictGroup 'power-action' -ShowInAllScripts $false -RunOrder 900 -Accent '#A855F7' -SuccessMessage 'Windows accepted the shutdown request and started the 30-second countdown.'
     New-CatalogItem -Id 'erase-reinstall-windows' -Name 'Unattended Erase and Reinstall' -Category 'Warning - Use With Caution' -Description 'Fully cleans the internal Windows disk and reinstalls Windows without further reset prompts.' -ScriptPath 'Reset-WindowsRemoveEverything.ps1' -ScriptArguments '-Confirmation $EraseConfirmation' -Impact 'PERMANENT DATA LOSS: after a 60-second cancellation window, Microsoft protected wipe removes every user profile, application, setting, and partition from the internal Windows disk, including a D: partition on that same disk. Microsoft warns that some device configurations may become unbootable if recovery fails. This cannot be undone.' -RequiresAdmin $true -InputTitle 'Type ERASE ALL INTERNAL DATA' -InputMessage 'This unattended action is irreversible. Back up anything required, connect AC power, and have the BitLocker recovery key available. Type ERASE ALL INTERNAL DATA exactly to schedule the protected wipe of C: and any D: partition on the same disk.' -InputVariable 'EraseConfirmation' -RequiredInputValue 'ERASE ALL INTERNAL DATA' -ConflictGroup 'power-action' -CanQueue $false -ShowInAllScripts $false -ResultMode 'Terminal' -RunOrder 999 -Accent '#EF4444' -SuccessMessage 'The unattended protected wipe was scheduled with a 60-second cancellation window.'
     New-CatalogItem -Id 'always-on-power' -Name 'Keep PC Awake' -Category 'Power' -Description 'Keeps the display, computer, and laptop active for reliable remote access.' -ScriptPath 'Configure-AlwaysOnPower.ps1' -Impact 'Changes the active power plan, disables sleep and hibernation, and makes lid-close and power-button actions do nothing.' -RequiresAdmin $true -Accent '#22D3EE' -SuccessMessage 'The active power plan now keeps the computer awake on AC and battery.'
@@ -2953,7 +2952,7 @@ Add-TerminalLine 'Temporary runtime data will be removed when this window closes
 $script:OutputTimer.Start()
 
 if ($env:SCRIPTBOX_TEST_MODE -eq '1') {
-    if ($script:Catalog.Count -ne 28 -or @($script:Catalog | Where-Object InlineScript).Count -ne 0) {
+    if ($script:Catalog.Count -ne 27 -or @($script:Catalog | Where-Object InlineScript).Count -ne 0) {
         throw 'Lazy catalog validation failed.'
     }
     if ($script:SectionButtons.Count -ne 5 -or
@@ -3055,7 +3054,7 @@ if ($env:SCRIPTBOX_TEST_MODE -eq '1') {
         throw 'Warning category and destructive-action safeguards validation failed.'
     }
     $allScriptsButton = @($script:CategoryHost.Children | Where-Object Tag -eq 'All scripts')[0]
-    if ($script:CardsHost.Children.Count -ne 23 -or $allScriptsButton.Content -ne 'All scripts   23' -or
+    if ($script:CardsHost.Children.Count -ne 22 -or $allScriptsButton.Content -ne 'All scripts   22' -or
         @($script:CategoryHost.Children | Where-Object Tag -eq 'Diagnostics').Count -ne 0) {
         throw 'All scripts must exclude warning-only actions and Diagnostics-section cards.'
     }
