@@ -11,7 +11,7 @@ Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 
 $script:AppName = 'ScriptBox'
-$script:Version = '3.4.0'
+$script:Version = '3.4.1'
 $script:Repository = 'https://github.com/GoblinRules/ScriptBox'
 $script:SelfSource = 'https://raw.githubusercontent.com/GoblinRules/ScriptBox/main/ScriptBox.ps1'
 $script:IconSource = 'https://raw.githubusercontent.com/GoblinRules/ScriptBox/main/assets/icon.png'
@@ -434,7 +434,8 @@ $windowXaml = @'
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
             <Grid x:Name="SearchPanel" Width="520" HorizontalAlignment="Left">
-                <TextBlock Text="&#x2315;" FontSize="17" Foreground="{DynamicResource MutedText}" Margin="13,7,0,0" Panel.ZIndex="1"/>
+                <TextBlock Text="&#x2315;" FontSize="17" Foreground="{DynamicResource MutedText}" Margin="13,7,0,0" Panel.ZIndex="1"
+                           HorizontalAlignment="Left" VerticalAlignment="Top" IsHitTestVisible="False"/>
                 <TextBlock x:Name="SearchHint" Text="Search apps and scripts...  (Ctrl+K)" FontSize="12" Foreground="{DynamicResource MutedText}"
                            Margin="39,12,0,0" IsHitTestVisible="False" Panel.ZIndex="1"/>
                 <TextBox x:Name="SearchBox" Height="42" Padding="38,11,13,8" FontSize="13" VerticalContentAlignment="Center"/>
@@ -2314,20 +2315,23 @@ function Set-TerminalMode {
 }
 
 function Restart-ScriptBoxAsAdministrator {
-    if ($script:IsAdministrator) {
-        Show-ScriptBoxDialog -Title 'Already elevated' -Message 'ScriptBox is already running with administrator rights.' -Buttons OK -Kind Info | Out-Null
-        return
-    }
+    # From a standard session this restarts elevated (UAC prompt); from an
+    # elevated session it simply relaunches ScriptBox, which stays elevated.
     try {
-        $handoff = "& { Invoke-RestMethod -UseBasicParsing '$($script:SelfSource)' | Invoke-Expression }"
+        $handoff = "& { `$env:SCRIPTBOX_HANDOFF = '1'; Invoke-RestMethod -UseBasicParsing '$($script:SelfSource)' | Invoke-Expression }"
         $encoded = ConvertTo-EncodedPowerShellCommand -Text $handoff
-        Start-Process -FilePath 'powershell.exe' -Verb RunAs -WindowStyle Hidden -ArgumentList @(
-            '-NoLogo', '-NoProfile', '-STA', '-EncodedCommand', $encoded
-        ) -ErrorAction Stop
+        $startParams = @{
+            FilePath     = 'powershell.exe'
+            WindowStyle  = 'Hidden'
+            ArgumentList = @('-NoLogo', '-NoProfile', '-STA', '-EncodedCommand', $encoded)
+            ErrorAction  = 'Stop'
+        }
+        if (-not $script:IsAdministrator) { $startParams.Verb = 'RunAs' }
+        Start-Process @startParams
         $script:Window.Close()
     }
     catch {
-        Show-ScriptBoxDialog -Title 'Administrator restart cancelled' -Message $_.Exception.Message -Buttons OK -Kind Info | Out-Null
+        Show-ScriptBoxDialog -Title 'Restart cancelled' -Message $_.Exception.Message -Buttons OK -Kind Info | Out-Null
     }
 }
 
@@ -2981,7 +2985,7 @@ if ($PSScriptRoot -and (Test-Path -LiteralPath (Join-Path $PSScriptRoot 'assets\
 $script:PrivilegeLabel.Text = if ($script:IsAdministrator) { "$([char]0x25CF) RUNNING AS ADMIN" } else { "$([char]0x25CF) STANDARD SESSION" }
 $script:PrivilegeLabel.Foreground = if ($script:IsAdministrator) { '#22C55E' } else { '#F59E0B' }
 $script:VersionLabel.Text = "PORTABLE  $([char]0x2022)  v$($script:Version)"
-$script:ElevateButton.Visibility = if ($script:IsAdministrator) { 'Collapsed' } else { 'Visible' }
+if ($script:IsAdministrator) { $script:ElevateButton.Content = "$([char]0x21BB)  Restart ScriptBox" }
 $script:Window.Title = "ScriptBox $($script:Version)"
 
 $script:Window.Add_Closing({
