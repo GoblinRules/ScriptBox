@@ -11,7 +11,7 @@ Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 
 $script:AppName = 'ScriptBox'
-$script:Version = '3.3.9'
+$script:Version = '3.4.0'
 $script:Repository = 'https://github.com/GoblinRules/ScriptBox'
 $script:SelfSource = 'https://raw.githubusercontent.com/GoblinRules/ScriptBox/main/ScriptBox.ps1'
 $script:IconSource = 'https://raw.githubusercontent.com/GoblinRules/ScriptBox/main/assets/icon.png'
@@ -277,6 +277,23 @@ $script:ApplicationLinks = @(
     ) }
     [pscustomobject]@{ Id='ninite'; Name='Ninite Installer'; Description='Essential apps bundle: 7-Zip, Chrome, and Firefox.'; Tags=@('UTILITY','BROWSER'); Uri='https://ninite.com/'; LinkLabel='Website'; Accent='#4ADE80'; Actions=@(
         [pscustomobject]@{ Text='Download & Install'; Type='Exe'; Uri='https://ninite.com/7zip-chrome-firefox/ninite.exe'; FileName='Ninite_Core_Apps.exe'; RequiresAdmin=$true; Impact='Downloads the Ninite bundle and installs or updates 7-Zip, Chrome, and Firefox.' }
+    ) }
+    [pscustomobject]@{ Id='textcrate'; Name='TextCrate'; Description='Tray tool that types your clipboard into remote VM windows and OCRs text back off screen.'; Tags=@('UTILITY'); Uri='https://github.com/GoblinRules/TextCrate'; LinkLabel='GitHub'; Accent='#818CF8'; Actions=@(
+        [pscustomobject]@{ Text='Download Installer'; Type='Exe'; Uri='https://github.com/GoblinRules/TextCrate/releases/download/v1.1.13/TextCrate-v1.1.13-win-x64-setup.exe'; FileName='TextCrate_Setup_1.1.13.exe'; RequiresAdmin=$false; Impact='Downloads the TextCrate installer to a temporary file and starts it. The installer offers install location, startup, and admin-launch options.' },
+        [pscustomobject]@{ Text='Download Portable'; Type='Portable'; Uri='https://github.com/GoblinRules/TextCrate/releases/download/v1.1.13/TextCrate-v1.1.13-win-x64-portable.zip'; FileName='TextCrate-1.1.13-portable.zip'; RequiresAdmin=$false; Impact='Downloads the portable TextCrate ZIP to the current user''s Desktop. Extract the ZIP yourself; ScriptBox does not extract or run it.' }
+    ) }
+    [pscustomobject]@{ Id='qr-defuzzer'; Name='QR-deFuzzer'; Description='Tray app that finds and decodes on-screen QR codes, including otpauth:// 2FA enrolment codes.'; Tags=@('UTILITY','SECURITY'); Uri='https://github.com/GoblinRules/QR-deFuzzer'; LinkLabel='GitHub'; Accent='#FBBF24'; Actions=@(
+        [pscustomobject]@{ Text='Download Portable'; Type='Portable'; Uri='https://github.com/GoblinRules/QR-deFuzzer/releases/latest/download/QR-deFuzzer-Portable.exe'; FileName='QR-deFuzzer-Portable.exe'; RequiresAdmin=$false; Impact='Downloads the portable QR-deFuzzer executable to the current user''s Desktop. It does not run it automatically.' },
+        [pscustomobject]@{ Text='Download & Install'; Type='Msi'; Uri='https://github.com/GoblinRules/QR-deFuzzer/releases/latest/download/QR-deFuzzer-Setup.msi'; FileName='QR-deFuzzer-Setup.msi'; RequiresAdmin=$true; Impact='Downloads the QR-deFuzzer MSI and installs it for this computer without forcing a restart.' }
+    ) }
+    [pscustomobject]@{ Id='invokex'; Name='InvokeX'; Description='Windows toolkit for app installs, system tweaks, and network diagnostics.'; Tags=@('SYSTEM','UTILITY','NETWORK'); Uri='https://github.com/GoblinRules/InvokeX'; LinkLabel='GitHub'; Accent='#C084FC'; Actions=@(
+        [pscustomobject]@{ Text='Download Portable'; Type='Portable'; Uri='https://github.com/GoblinRules/InvokeX/releases/latest/download/InvokeX.exe'; FileName='InvokeX.exe'; RequiresAdmin=$false; Impact='Downloads the portable InvokeX executable to the current user''s Desktop. It does not run it automatically.' },
+        [pscustomobject]@{ Text='Download Installer'; Type='Exe'; Uri='https://github.com/GoblinRules/InvokeX/releases/download/v2.1.0/InvokeX.Setup.2.1.0.exe'; FileName='InvokeX_Setup_2.1.0.exe'; RequiresAdmin=$true; Impact='Downloads the InvokeX installer to a temporary file and starts it with administrator rights.' }
+    ) }
+    [pscustomobject]@{ Id='angryip'; Name='Angry IP Scanner'; Description='Fast open-source IP address and port scanner for auditing local networks.'; Tags=@('NETWORK','UTILITY'); Uri='https://angryip.org/'; LinkLabel='Website'; Accent='#F87171'; Actions=@(
+        [pscustomobject]@{ Text='Download & Install'; Type='Exe'; Uri='https://github.com/angryip/ipscan/releases/download/3.9.3/ipscan-3.9.3-setup.exe'; FileName='ipscan_Setup_3.9.3.exe'; RequiresAdmin=$true; Impact='Downloads the Angry IP Scanner installer and starts it with administrator rights.' },
+        [pscustomobject]@{ Text='Download Portable'; Type='Portable'; Uri='https://github.com/angryip/ipscan/releases/download/3.9.3/ipscan-win64-3.9.3.exe'; FileName='ipscan-win64.exe'; RequiresAdmin=$false; Impact='Downloads the portable Angry IP Scanner executable to the current user''s Desktop. It does not run it automatically.' },
+        [pscustomobject]@{ Text='Install via winget'; Type='Command'; Uri=''; FileName=''; RequiresAdmin=$true; Impact='Installs Angry IP Scanner from the winget public repository, accepting the package and source agreements. winget is a per-user tool, so it can be missing for SYSTEM or a different elevated admin account; use Download & Install instead if this fails.'; Script='if (-not (Get-Command winget -ErrorAction SilentlyContinue)) { throw ''winget (App Installer) is not available in this session; use Download & Install instead.'' }; winget install --id angryziber.AngryIPScanner --exact --silent --accept-package-agreements --accept-source-agreements' }
     ) }
 )
 
@@ -1436,6 +1453,35 @@ function Get-ApplicationStatus {
                     'C:\Program Files\Mozilla Firefox\firefox.exe'
                 ) | Where-Object { -not (Test-Path -LiteralPath $_) }
                 $installed = @($missing).Count -eq 0
+            }
+            'textcrate' {
+                $installed = @(
+                    (Join-Path $env:LOCALAPPDATA 'Programs\TextCrate\TextCrate.exe'),
+                    'C:\Program Files\TextCrate\TextCrate.exe',
+                    (Join-Path ([Environment]::GetFolderPath('Desktop')) 'TextCrate\TextCrate.exe')
+                ) | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+            }
+            'qr-defuzzer' {
+                $installed = @(
+                    'C:\Program Files (x86)\QR-deFuzzer\QR-deFuzzer.exe',
+                    'C:\Program Files\QR-deFuzzer\QR-deFuzzer.exe',
+                    (Join-Path $env:LOCALAPPDATA 'QR-deFuzzer\QR-deFuzzer.exe'),
+                    (Join-Path ([Environment]::GetFolderPath('Desktop')) 'QR-deFuzzer-Portable.exe')
+                ) | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+            }
+            'invokex' {
+                $installed = @(
+                    'C:\Program Files\InvokeX\InvokeX.exe',
+                    (Join-Path $env:LOCALAPPDATA 'Programs\InvokeX\InvokeX.exe'),
+                    (Join-Path ([Environment]::GetFolderPath('Desktop')) 'InvokeX.exe')
+                ) | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+            }
+            'angryip' {
+                $installed = @(
+                    'C:\Program Files\Angry IP Scanner\ipscan.exe',
+                    'C:\Program Files (x86)\Angry IP Scanner\ipscan.exe',
+                    (Join-Path ([Environment]::GetFolderPath('Desktop')) 'ipscan-win64.exe')
+                ) | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
             }
         }
         if ($installed) { $status = 'INSTALLED' }
@@ -2977,7 +3023,7 @@ if ($env:SCRIPTBOX_TEST_MODE -eq '1') {
         $script:NewInstallButton.Visibility -ne 'Collapsed' -or
         $script:SearchPanel.Visibility -ne 'Visible' -or
         $script:ApplicationSelectionControls.Count -ne $script:ApplicationLinks.Count -or
-        $script:RunButtons.Count -ne 15) {
+        $script:RunButtons.Count -ne 24) {
         throw 'Application Installer section validation failed.'
     }
     foreach ($application in $script:ApplicationLinks) {
