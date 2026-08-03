@@ -11,7 +11,7 @@ Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 
 $script:AppName = 'ScriptBox'
-$script:Version = '3.4.1'
+$script:Version = '3.4.2'
 $script:Repository = 'https://github.com/GoblinRules/ScriptBox'
 $script:SelfSource = 'https://raw.githubusercontent.com/GoblinRules/ScriptBox/main/ScriptBox.ps1'
 $script:IconSource = 'https://raw.githubusercontent.com/GoblinRules/ScriptBox/main/assets/icon.png'
@@ -420,7 +420,7 @@ $windowXaml = @'
                         <Button x:Name="SettingsButton" Content="&#x2699;  Settings" Height="34" FontSize="10" HorizontalContentAlignment="Left" Padding="11,6" Margin="0,0,0,6"/>
                         <Button x:Name="OpenTerminalButton" Content="&#x25B0;  Terminal" Height="34" FontSize="10" HorizontalContentAlignment="Left" Padding="11,6" Margin="0,0,0,6"/>
                         <Button x:Name="TaskManagerButton" Content="&#x25A6;  Task Manager" Height="34" FontSize="10" HorizontalContentAlignment="Left" Padding="11,6" Margin="0,0,0,6"/>
-                        <Button x:Name="ElevateButton" Content="&#x21BB;  Restart as Admin" Height="34" FontSize="10" HorizontalContentAlignment="Left" Padding="11,6" Margin="0,0,0,9"/>
+                        <Button x:Name="ElevateButton" Content="&#x21BB;  Restart PC" Height="34" FontSize="10" HorizontalContentAlignment="Left" Padding="11,6" Margin="0,0,0,9"/>
                         <TextBlock x:Name="PrivilegeLabel" FontSize="10" FontWeight="SemiBold" Foreground="#22C55E" Margin="2,0,0,4"/>
                         <TextBlock Text="ScriptBox stays portable" FontSize="9" Foreground="{DynamicResource MutedText}" Margin="2,0,0,0"/>
                     </StackPanel>
@@ -2796,7 +2796,17 @@ $script:ExpandTerminalButton.Add_Click({
 $script:CollapseTerminalButton.Add_Click({
     Set-TerminalMode -Mode $(if ($script:TerminalMode -eq 'Collapsed') { 'Normal' } else { 'Collapsed' })
 })
-$script:ElevateButton.Add_Click({ Restart-ScriptBoxAsAdministrator })
+$script:ElevateButton.Add_Click({
+    $confirmed = Show-ScriptBoxDialog -Title 'Restart PC' `
+        -Message 'Restart this computer? Windows will restart in 15 seconds. Open work may be lost; run "shutdown /a" to abort the countdown.' `
+        -Buttons YesNo -Kind Warning
+    if (-not $confirmed) { return }
+    try {
+        Start-Process -FilePath 'shutdown.exe' -ArgumentList '/r', '/t', '15' -WindowStyle Hidden -ErrorAction Stop
+        Add-TerminalLine 'Windows will restart in 15 seconds. Run "shutdown /a" to abort.'
+    }
+    catch { Add-TerminalLine "The restart could not be started: $($_.Exception.Message)" }
+})
 $script:ControlPanelButton.Add_Click({
     try { Start-Process -FilePath 'control.exe' -ErrorAction Stop }
     catch { Add-TerminalLine "Could not open Control Panel: $($_.Exception.Message)" }
@@ -2985,7 +2995,6 @@ if ($PSScriptRoot -and (Test-Path -LiteralPath (Join-Path $PSScriptRoot 'assets\
 $script:PrivilegeLabel.Text = if ($script:IsAdministrator) { "$([char]0x25CF) RUNNING AS ADMIN" } else { "$([char]0x25CF) STANDARD SESSION" }
 $script:PrivilegeLabel.Foreground = if ($script:IsAdministrator) { '#22C55E' } else { '#F59E0B' }
 $script:VersionLabel.Text = "PORTABLE  $([char]0x2022)  v$($script:Version)"
-if ($script:IsAdministrator) { $script:ElevateButton.Content = "$([char]0x21BB)  Restart ScriptBox" }
 $script:Window.Title = "ScriptBox $($script:Version)"
 
 $script:Window.Add_Closing({
