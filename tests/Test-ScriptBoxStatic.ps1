@@ -222,7 +222,11 @@ foreach ($requiredRepairAudioText in @(
     "StartMode -ne 'Auto'",
     "State -ne 'Running'",
     'Get-PnpDevice -Class MEDIA -PresentOnly',
-    'Enable-PnpDevice -InstanceId $device.InstanceId'
+    'Enable-PnpDevice -InstanceId $device.InstanceId',
+    "Unregister-ScheduledTask -TaskPath '\ScriptBox\' -TaskName 'EnforceAudioMute'",
+    'C:\ProgramData\ScriptBox\Enforce-AudioMute.ps1',
+    '[Guid("5CDF2C82-841E-4546-9722-0CF74078229A")]',
+    '[SbxAudio.Silencer]::SetEndpoint($endpoint.Id, $false, 0.5)'
 )) {
     if ($repairShellSource -notmatch [regex]::Escape($requiredRepairAudioText)) {
         throw "The system-tray repair is missing required audio restoration behavior: $requiredRepairAudioText"
@@ -236,15 +240,26 @@ foreach ($requiredDisableAudioText in @(
     'Set-Service -Name $serviceName -StartupType Automatic',
     'Start-Service -Name $serviceName',
     'Get-PnpDevice -Class MEDIA -PresentOnly',
-    'Disable-PnpDevice -InstanceId $device.InstanceId'
+    'Enable-PnpDevice -InstanceId $device.InstanceId',
+    '[Guid("5CDF2C82-841E-4546-9722-0CF74078229A")]',
+    'EnumAudioEndpoints(EDataFlow.eRender, DEVICE_STATE_ACTIVE',
+    'SetMute([MarshalAs(UnmanagedType.Bool)] bool mute',
+    '[SbxAudio.Silencer]::EnforceSilence()',
+    'C:\ProgramData\ScriptBox\Enforce-AudioMute.ps1',
+    '<GroupId>S-1-5-32-545</GroupId>',
+    '\ScriptBox\EnforceAudioMute',
+    'Register-ScheduledTask'
 )) {
     if ($disableAudioSource -notmatch [regex]::Escape($requiredDisableAudioText)) {
-        throw "Disable Machine Audio is missing tray-safe behavior: $requiredDisableAudioText"
+        throw "Disable Machine Audio is missing mute-and-enforce behavior: $requiredDisableAudioText"
     }
 }
 if ($disableAudioSource -match [regex]::Escape('-StartupType Disabled') -or
     $disableAudioSource -match [regex]::Escape('Stop-Service')) {
     throw 'Disable Machine Audio must not disable or stop the Windows audio services; the Windows 11 tray hangs without them.'
+}
+if ($disableAudioSource -match [regex]::Escape('Disable-PnpDevice')) {
+    throw 'Disable Machine Audio must mute endpoints, not disable audio devices; endpoint teardown hangs the Windows 11 tray.'
 }
 
 $usbDevicesSource = Get-Content -Raw -LiteralPath $usbDevicesPath

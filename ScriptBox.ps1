@@ -11,7 +11,7 @@ Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 
 $script:AppName = 'ScriptBox'
-$script:Version = '3.3.8'
+$script:Version = '3.3.9'
 $script:Repository = 'https://github.com/GoblinRules/ScriptBox'
 $script:SelfSource = 'https://raw.githubusercontent.com/GoblinRules/ScriptBox/main/ScriptBox.ps1'
 $script:IconSource = 'https://raw.githubusercontent.com/GoblinRules/ScriptBox/main/assets/icon.png'
@@ -212,12 +212,12 @@ $script:Catalog = @(
     New-CatalogItem -Id 'always-on-power' -Name 'Keep PC Awake' -Category 'Power' -Description 'Keeps the display, computer, and laptop active for reliable remote access.' -ScriptPath 'Configure-AlwaysOnPower.ps1' -Impact 'Changes the active power plan, disables sleep and hibernation, and makes lid-close and power-button actions do nothing.' -RequiresAdmin $true -Accent '#22D3EE' -SuccessMessage 'The active power plan now keeps the computer awake on AC and battery.'
     New-CatalogItem -Id 'keep-network-active' -Name 'Keep Network Active' -Category 'Power' -Description 'Reduces adapter and power-plan sleep behavior so networking remains available while locked.' -ScriptPath 'Keep-NetworkActive.ps1' -Impact 'Disables several network, PCIe, and USB power-saving features and writes a log under C:\Tools\Logs.' -RequiresAdmin $true -Accent '#2DD4BF' -SuccessMessage 'Supported network power-saving settings were disabled to improve locked-session connectivity.'
     New-CatalogItem -Id 'hide-shutdown-options' -Name 'Hide Shutdown Options' -Category 'Security' -Description 'Hides Shutdown, Restart, Sleep, and Hibernate for existing and future Windows users without changing notification-area policy.' -ScriptPath 'Hide-ShutdownOptions.ps1' -Impact 'Sets only the documented per-user NoClose policy, including offline and Default user registry hives. It does not alter Windows PolicyManager defaults or system-tray policy.' -RequiresAdmin $true -ConflictGroup 'power-menu-visibility' -Accent '#C084FC' -SuccessMessage 'Power commands are hidden for existing profiles and the Default user profile without changing notification-area policy.'
-    New-CatalogItem -Id 'repair-power-menu-system-tray' -Name 'Repair System Tray and Audio' -Category 'Fixes' -Description 'Restores machine audio and reverses legacy ScriptBox policies that can disturb Windows 11 shell surfaces.' -ScriptPath 'Repair-PowerMenuAndSystemTray.ps1' -Impact 'Removes ScriptBox''s local fDisableCam policy, returns Windows Audio Endpoint Builder and Windows Audio to Automatic/Running, re-enables audio devices disabled by Disable Machine Audio, restores the four legacy PolicyManager Start defaults, and removes ScriptBox''s NoClose value from existing and future-user profiles. Sign out or restart afterward to reload the shell.' -RequiresAdmin $true -ConflictGroup 'power-menu-visibility' -Accent '#34D399' -SuccessMessage 'Machine audio and legacy ScriptBox shell policies were restored; sign out or restart Windows to reload the system tray.'
+    New-CatalogItem -Id 'repair-power-menu-system-tray' -Name 'Repair System Tray and Audio' -Category 'Fixes' -Description 'Restores machine audio and reverses legacy ScriptBox policies that can disturb Windows 11 shell surfaces.' -ScriptPath 'Repair-PowerMenuAndSystemTray.ps1' -Impact 'Removes ScriptBox''s local fDisableCam policy, stops and removes the ScriptBox\EnforceAudioMute scheduled task and its enforcement script, unmutes every active audio output endpoint to 50 percent volume via the same CoreAudio API as the tray volume slider, returns Windows Audio Endpoint Builder and Windows Audio to Automatic/Running, re-enables audio devices disabled by older ScriptBox releases, restores the four legacy PolicyManager Start defaults, and removes ScriptBox''s NoClose value from existing and future-user profiles. Sign out or restart afterward to reload the shell.' -RequiresAdmin $true -ConflictGroup 'power-menu-visibility' -Accent '#34D399' -SuccessMessage 'Machine audio was unmuted, the mute enforcement task was removed, and legacy ScriptBox shell policies were restored; sign out or restart Windows to reload the system tray.'
     New-CatalogItem -Id 'idle-lock-10-minutes' -Name 'Lock After 10 Minutes' -Category 'Security' -Description 'Locks signed-in Windows sessions after ten minutes without keyboard or mouse activity.' -ScriptPath 'Configure-IdleLock.ps1' -Impact 'Sets computer and user inactivity policies and refreshes Group Policy. A sign-out or restart may be needed.' -RequiresAdmin $true -Accent '#F472B6' -SuccessMessage 'Windows is configured to lock idle sessions after ten minutes.'
     New-CatalogItem -Id 'allow-password-signin' -Name 'Allow Password Sign-in' -Category 'Security' -Description 'Allows Microsoft-account users to choose password sign-in while keeping their existing PIN.' -ScriptPath 'Allow-PasswordSignIn.ps1' -Impact 'Sets the machine-wide DevicePasswordLessBuildVersion registry value to 0. Existing Windows Hello PINs are not removed.' -RequiresAdmin $true -Accent '#C084FC' -SuccessMessage 'Password sign-in is permitted and existing Windows Hello PINs remain available.'
     New-CatalogItem -Id 'enable-location-services' -Name 'Enable Location Services' -Category 'Windows' -Description 'Removes common policy blocks and restores the Windows Geolocation Service.' -ScriptPath 'Enable-LocationServices.ps1' -Impact 'Changes machine policy values, configures lfsvc for demand start, starts it, and refreshes Group Policy.' -RequiresAdmin $true -Accent '#34D399' -SuccessMessage 'Location policy restrictions were removed and the Geolocation Service was restored.'
     New-CatalogItem -Id 'disable-ipv6' -Name 'Disable IPv6 Components' -Category 'Windows' -Description 'Uses the supported DisabledComponents registry policy to disable Windows IPv6 components.' -ScriptPath 'Disable-IPv6.ps1' -Impact 'Sets a machine-wide networking registry value to 0xFF. A restart is required and IPv6-dependent services may be affected.' -RequiresAdmin $true -Accent '#F59E0B' -SuccessMessage 'IPv6 components are configured as disabled and the change will apply after restart.'
-    New-CatalogItem -Id 'disable-machine-audio' -Name 'Disable Machine Audio' -Category 'Windows' -Description 'Disables every audio device and Remote Desktop audio while keeping the Windows audio services running for the Windows 11 system tray.' -ScriptPath 'Disable-MachineAudio.ps1' -Impact 'Disables all present audio (MEDIA-class) devices and blocks RDP playback redirection, so playback and microphone/input audio are unavailable. Windows Audio and Audio Endpoint Builder stay Automatic and running so the Windows 11 taskbar, volume flyout, and Quick Settings remain responsive. Use Fixes > Repair System Tray and Audio to reverse it.' -RequiresAdmin $true -Accent '#F472B6' -SuccessMessage 'All audio devices are disabled while the Windows audio services keep the Windows 11 shell responsive.'
+    New-CatalogItem -Id 'disable-machine-audio' -Name 'Disable Machine Audio' -Category 'Windows' -Description 'Mutes all audio output and Remote Desktop audio, then keeps it muted with a scheduled task, without disabling any service or device.' -ScriptPath 'Disable-MachineAudio.ps1' -Impact 'Mutes every active audio output endpoint at zero volume through the same Windows CoreAudio API the system tray volume slider uses, blocks RDP playback redirection, and registers the hidden ScriptBox\EnforceAudioMute scheduled task, which re-mutes output every few seconds and silences audio devices connected later, such as USB headsets. Nothing is disabled: Windows Audio, Audio Endpoint Builder, and all audio devices stay in their normal state, so the Windows 11 taskbar, volume flyout, and Quick Settings remain responsive. Microphone input is not blocked. Use Fixes > Repair System Tray and Audio to reverse it.' -RequiresAdmin $true -Accent '#F472B6' -SuccessMessage 'All audio output is muted and the EnforceAudioMute task keeps it muted; no service or device was disabled, so the Windows 11 system tray stays responsive.'
     New-CatalogItem -Id 'enable-rdp-current-user' -Name 'Enable Remote Desktop' -Category 'Remote Access' -Description 'Enables Remote Desktop for this PC with NLA and permits the interactively signed-in user.' -ScriptPath 'Enable-RDPForCurrentUser.ps1' -Impact 'Enables the machine-level Remote Desktop setting and policy, starts Remote Desktop Services, opens inbound TCP/UDP 3389 firewall rules, and changes local group membership.' -RequiresAdmin $true -Accent '#22D3EE' -SuccessMessage 'Remote Desktop was enabled for this PC, with NLA, firewall access, and user membership configured successfully.'
     New-CatalogItem -Id 'windows-update-security' -Name 'Security-Focused Updates' -Category 'Windows Update' -Description 'Keeps monthly updates automatic while blocking previews and deferring feature upgrades.' -ScriptPath 'Configure-WindowsUpdateSecurityFocused.ps1' -Impact 'Changes Windows Update policy, excludes drivers, defers feature upgrades for 365 days, and starts an update scan.' -RequiresAdmin $true -ConflictGroup 'windows-update-mode' -Accent '#34D399' -SuccessMessage 'Windows Update now prioritizes monthly quality updates without optional previews or drivers.'
     New-CatalogItem -Id 'windows-update-manual' -Name 'Manual Updates Only' -Category 'Windows Update' -Description 'Stops automatic update downloads and installations while keeping manual checking available.' -ScriptPath 'Configure-WindowsUpdateManual.ps1' -Impact 'Removes conflicting update policy and disables automatic Windows Update downloads and installation.' -RequiresAdmin $true -ConflictGroup 'windows-update-mode' -Accent '#F59E0B' -SuccessMessage 'Windows Update is now manual only; someone must regularly check and install security updates.'
@@ -2414,14 +2414,22 @@ function Render-Cards {
     $script:SelectionControls.Clear()
     $script:ApplicationSelectionControls.Clear()
     $query = $script:SearchBox.Text.Trim()
+    $hasQuery = -not [string]::IsNullOrWhiteSpace($query)
     $filtered = @($script:Catalog | Where-Object {
-        # Diagnostics-category cards render in the Diagnostics section instead.
-        $_.Category -ne 'Diagnostics' -and
-        (($script:ActiveCategory -eq 'All scripts' -and $_.ShowInAllScripts) -or $_.Category -eq $script:ActiveCategory) -and
-        ([string]::IsNullOrWhiteSpace($query) -or
-         $_.Name.IndexOf($query, [StringComparison]::OrdinalIgnoreCase) -ge 0 -or
-         $_.Description.IndexOf($query, [StringComparison]::OrdinalIgnoreCase) -ge 0 -or
-         $_.Category.IndexOf($query, [StringComparison]::OrdinalIgnoreCase) -ge 0)
+        $matchesQuery = $hasQuery -and (
+            $_.Name.IndexOf($query, [StringComparison]::OrdinalIgnoreCase) -ge 0 -or
+            $_.Description.IndexOf($query, [StringComparison]::OrdinalIgnoreCase) -ge 0 -or
+            $_.Category.IndexOf($query, [StringComparison]::OrdinalIgnoreCase) -ge 0)
+        if ($hasQuery -and $script:ActiveCategory -eq 'All scripts') {
+            # A search from All scripts covers the entire catalog, including
+            # Diagnostics-section cards and warning-only actions.
+            $matchesQuery
+        } else {
+            # Diagnostics-category cards render in the Diagnostics section instead.
+            $_.Category -ne 'Diagnostics' -and
+            (($script:ActiveCategory -eq 'All scripts' -and $_.ShowInAllScripts) -or $_.Category -eq $script:ActiveCategory) -and
+            ((-not $hasQuery) -or $matchesQuery)
+        }
     })
 
     foreach ($item in $filtered) { $script:CardsHost.Children.Add((New-Card -Item $item)) | Out-Null }
@@ -3023,6 +3031,17 @@ if ($env:SCRIPTBOX_TEST_MODE -eq '1') {
         $script:NewInstallButton.Visibility -ne 'Visible') {
         throw 'Scripts section and top-tab validation failed.'
     }
+    # A search from All scripts must cover the entire catalog, including
+    # Diagnostics-section cards and warning-only actions.
+    $script:SearchBox.Text = 'kvm'
+    if ($script:CardsHost.Children.Count -lt 3) {
+        throw 'All-scripts search must surface Diagnostics-section cards.'
+    }
+    $script:SearchBox.Text = 'zzzznonsense'
+    if ($script:CardsHost.Children.Count -ne 0) {
+        throw 'All-scripts search must return no cards for an unmatched query.'
+    }
+    $script:SearchBox.Text = ''
     # Validate only the lookup side of the New Install preset; the queue itself
     # is never started here because its tasks change real system state.
     if ($script:NewInstallPresetIds.Count -ne 12) {
