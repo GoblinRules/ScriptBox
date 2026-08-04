@@ -11,7 +11,7 @@ Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 
 $script:AppName = 'ScriptBox'
-$script:Version = '3.4.2'
+$script:Version = '3.4.3'
 $script:Repository = 'https://github.com/GoblinRules/ScriptBox'
 $script:SelfSource = 'https://raw.githubusercontent.com/GoblinRules/ScriptBox/main/ScriptBox.ps1'
 $script:IconSource = 'https://raw.githubusercontent.com/GoblinRules/ScriptBox/main/assets/icon.png'
@@ -224,6 +224,7 @@ $script:Catalog = @(
     New-CatalogItem -Id 'install-ninite-apps' -Name 'Install Core Apps' -Category 'Software' -Description 'Installs or updates 7-Zip, Chrome, and Firefox through Ninite.' -ScriptPath 'Install-NiniteApps.ps1' -Impact 'Downloads a signed Ninite executable, runs it unattended, installs or updates three applications, then removes the installer.' -RequiresAdmin $true -Accent '#34D399' -SuccessMessage '7-Zip, Chrome, and Firefox were installed or updated.'
     New-CatalogItem -Id 'deploy-laptop-lid-check' -Name 'Deploy Laptop Lid Check' -Category 'Utilities' -Description 'Adds a Public Desktop shortcut that shows the current laptop-lid state in a friendly popup.' -ScriptPath 'Deploy-LaptopLidCheck.ps1' -Impact 'Creates C:\ProgramData\LaptopLidCheck and C:\Users\Public\Desktop\Folder.lnk for all users.' -RequiresAdmin $true -Accent '#C084FC' -SuccessMessage 'The matching Laptop Lid Check popup and Public Desktop shortcut were installed.'
     New-CatalogItem -Id 'show-connected-usb-devices' -Name 'View Connected USB Devices' -Category 'Utilities' -Description 'Shows present USB Plug and Play devices, locations, and USB paths in a formatted table popup.' -ScriptPath 'Show-ConnectedUSBDevices.ps1' -Impact 'Performs a read-only PnP device query and opens a sortable popup. It makes no system changes.' -CanQueue $false -ResultMode 'None' -Accent '#22D3EE' -SuccessMessage 'The connected USB device table was displayed.'
+    New-CatalogItem -Id 'show-pc-info' -Name 'View PC Info' -Category 'Utilities' -Description 'Shows the computer name, make, model, serial, MAC, CPU, RAM, and external IP, and saves PC-Info.txt to the Desktop.' -ScriptPath 'Show-PCInfo.ps1' -Impact 'Performs read-only hardware queries, contacts api.ipify.org to read the external IP address, and writes PC-Info.txt to the current user''s Desktop.' -Accent '#60A5FA' -SuccessMessage 'The PC summary was displayed and saved to the Desktop as PC-Info.txt.'
     New-CatalogItem -Id 'launch-jetfuel' -Name 'Launch JetFuel' -Category 'Tools' -Description 'Downloads and runs the current JetFuel launcher.' -SourceUri 'https://tails.revhooks.cc' -Impact 'Executes remote PowerShell from tails.revhooks.cc. Review the source you trust before running it.' -RequiresAdmin $true -NeedsBypass $true -ResultMode 'None' -Accent '#22D3EE'
     New-CatalogItem -Id 'launch-invokex' -Name 'Launch InvokeX' -Category 'Tools' -Description 'Downloads and runs the current InvokeX installer from GitHub.' -SourceUri 'https://raw.githubusercontent.com/GoblinRules/InvokeX/main/install.ps1' -Impact 'Executes remote PowerShell from GoblinRules/InvokeX. The downloaded tool may create its own files.' -NeedsBypass $true -ResultMode 'None' -Accent '#C084FC'
     New-CatalogItem -Id 'launch-winutil' -Name 'Launch WinUtil' -Category 'Tools' -Description 'Downloads and runs Chris Titus Tech Windows Utility.' -SourceUri 'https://christitus.com/win' -Impact 'Executes remote PowerShell from christitus.com. Changes are made only when selected inside WinUtil.' -RequiresAdmin $true -NeedsBypass $true -ResultMode 'None' -Accent '#2DD4BF'
@@ -3021,7 +3022,7 @@ Add-TerminalLine 'Temporary runtime data will be removed when this window closes
 $script:OutputTimer.Start()
 
 if ($env:SCRIPTBOX_TEST_MODE -eq '1') {
-    if ($script:Catalog.Count -ne 27 -or @($script:Catalog | Where-Object InlineScript).Count -ne 0) {
+    if ($script:Catalog.Count -ne 28 -or @($script:Catalog | Where-Object InlineScript).Count -ne 0) {
         throw 'Lazy catalog validation failed.'
     }
     if ($script:SectionButtons.Count -ne 5 -or
@@ -3134,7 +3135,7 @@ if ($env:SCRIPTBOX_TEST_MODE -eq '1') {
         throw 'Warning category and destructive-action safeguards validation failed.'
     }
     $allScriptsButton = @($script:CategoryHost.Children | Where-Object Tag -eq 'All scripts')[0]
-    if ($script:CardsHost.Children.Count -ne 22 -or $allScriptsButton.Content -ne 'All scripts   22' -or
+    if ($script:CardsHost.Children.Count -ne 23 -or $allScriptsButton.Content -ne 'All scripts   23' -or
         @($script:CategoryHost.Children | Where-Object Tag -eq 'Diagnostics').Count -ne 0) {
         throw 'All scripts must exclude warning-only actions and Diagnostics-section cards.'
     }
